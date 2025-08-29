@@ -41,11 +41,6 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       
-      - name: Setup Zig
-        uses: goto-bus-stop/setup-zig@v2
-        with:
-          version: 0.11.0
-      
       - name: Build NuGet package
         run: dotnet build -t:Pack src/PublishAotCross.nuproj
       
@@ -73,6 +68,7 @@ jobs:
                 -r "$target" \
                 -c Release \
                 -p:StripSymbols=false \
+                -p:InvariantGlobalization=true \
                 --output "artifacts/${{ matrix.host-name }}/$target"; then
                 
                 echo "✅ Cross-compilation build succeeded for $target"
@@ -101,6 +97,7 @@ jobs:
                   -r "$target" \
                   -c Release \
                   -p:StripSymbols=false \
+                  -p:InvariantGlobalization=true \
                   --output "artifacts/${{ matrix.host-name }}/$target"; then
                   
                   echo "✅ Native macOS build succeeded for $target"
@@ -202,12 +199,6 @@ jobs:
     steps:
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
-      
-      - name: Install ICU library (for glibc targets)
-        if: matrix.runner == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libicu-dev
       
       - name: Test binaries from all host platforms
         shell: bash

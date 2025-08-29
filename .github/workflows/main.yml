@@ -26,9 +26,6 @@ jobs:
         with:
           dotnet-version: '8.0.x'
           include-prerelease: true
-      - name: Setup zig
-        if: ${{ github.event.inputs.version == '' }}
-        uses: goto-bus-stop/setup-zig@v2
       - name: Build (CI)
         if: ${{ github.event.inputs.version == '' }}
         run: |
