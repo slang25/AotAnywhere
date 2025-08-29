@@ -17,17 +17,17 @@ jobs:
           # Windows host builds
           - host: windows-latest
             host-name: windows
-            targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64"
+            targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
           
           # macOS x64 host builds  
           - host: macos-13
             host-name: macos-x64
-            targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64"
+            targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
           
           # macOS ARM64 host builds
           - host: macos-latest
             host-name: macos-arm64
-            targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64"
+            targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
 
     runs-on: ${{ matrix.host }}
     name: Build from ${{ matrix.host-name }}
@@ -65,16 +65,68 @@ jobs:
             # Create output directory
             mkdir -p "artifacts/${{ matrix.host-name }}/$target"
             
-            # Build for the target platform
-            if dotnet publish test/Hello.csproj \
-              -r "$target" \
-              -c Release \
-              -p:StripSymbols=false \
-              --output "artifacts/${{ matrix.host-name }}/$target"; then
-              
-              echo "✅ Build succeeded for $target"
-              
-              # Verify the binary was created
+            # Determine if this is a cross-compilation or native build
+            if [[ "$target" == linux-* ]]; then
+              echo "Cross-compiling to Linux target using PublishAotCross..."
+              # Build for Linux targets using PublishAotCross
+              if dotnet publish test/Hello.csproj \
+                -r "$target" \
+                -c Release \
+                -p:StripSymbols=false \
+                --output "artifacts/${{ matrix.host-name }}/$target"; then
+                
+                echo "✅ Cross-compilation build succeeded for $target"
+                build_result="success"
+              else
+                echo "❌ Cross-compilation build failed for $target"
+                build_result="failed"
+              fi
+            elif [[ "$target" == osx-* ]]; then
+              echo "Native macOS build (without PublishAotCross)..."
+              # For macOS targets, check if we can build natively
+              current_os="${{ matrix.host-name }}"
+              if [[ "$current_os" == "windows" ]]; then
+                echo "⚠️ Skipping macOS target $target on Windows host (not supported for native compilation)"
+                echo "Creating placeholder to indicate skipped build..."
+                echo "SKIPPED: macOS target on Windows host" > "artifacts/${{ matrix.host-name }}/$target/SKIPPED.txt"
+                build_result="skipped"
+              else
+                # Build natively on macOS without PublishAotCross
+                # Create a temporary project file without PublishAotCross reference
+                cp test/Hello.csproj "test/Hello-native.csproj"
+                # Remove the PublishAotCross import
+                sed -i.bak '/PublishAotCross.targets/d' "test/Hello-native.csproj"
+                
+                if dotnet publish test/Hello-native.csproj \
+                  -r "$target" \
+                  -c Release \
+                  -p:StripSymbols=false \
+                  --output "artifacts/${{ matrix.host-name }}/$target"; then
+                  
+                  echo "✅ Native macOS build succeeded for $target"
+                  
+                  # Rename the binary from Hello-native to Hello
+                  if [ -f "artifacts/${{ matrix.host-name }}/$target/Hello-native" ]; then
+                    mv "artifacts/${{ matrix.host-name }}/$target/Hello-native" "artifacts/${{ matrix.host-name }}/$target/Hello"
+                    echo "✅ Binary renamed from Hello-native to Hello"
+                  fi
+                  
+                  build_result="success"
+                else
+                  echo "❌ Native macOS build failed for $target"
+                  build_result="failed"
+                fi
+                
+                # Clean up temporary file
+                rm -f "test/Hello-native.csproj" "test/Hello-native.csproj.bak"
+              fi
+            else
+              echo "❌ Unknown target platform: $target"
+              build_result="failed"
+            fi
+            
+            # Verify the binary was created (if build was successful)
+            if [[ "$build_result" == "success" ]]; then
               binary_name="Hello"
               
               if [ -f "artifacts/${{ matrix.host-name }}/$target/$binary_name" ]; then
@@ -98,11 +150,10 @@ jobs:
                 ls -la "artifacts/${{ matrix.host-name }}/$target/" || echo "Output directory not found"
                 build_success=false
               fi
-              
-            else
-              echo "❌ Build failed for $target"
+            elif [[ "$build_result" == "failed" ]]; then
               build_success=false
             fi
+            # Note: "skipped" builds don't count as failures
             
             echo ""
           done
@@ -134,6 +185,16 @@ jobs:
             runner-name: ubuntu-x64
             test-targets: "linux-x64,linux-musl-x64"
             host-sources: "windows,macos-x64,macos-arm64"
+          # Test macOS binaries on macOS x64
+          - runner: macos-13
+            runner-name: macos-x64
+            test-targets: "osx-x64"
+            host-sources: "windows,macos-x64,macos-arm64"
+          # Test macOS binaries on macOS ARM64
+          - runner: macos-latest
+            runner-name: macos-arm64
+            test-targets: "osx-arm64"
+            host-sources: "windows,macos-x64,macos-arm64"
     
     runs-on: ${{ matrix.runner }}
     name: Validate on ${{ matrix.runner-name }}
@@ -143,6 +204,7 @@ jobs:
         uses: actions/download-artifact@v4
       
       - name: Install ICU library (for glibc targets)
+        if: matrix.runner == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y libicu-dev
@@ -183,10 +245,17 @@ jobs:
             
             for target in "${TARGET_ARRAY[@]}"; do
               binary_path="binaries-$host/$target/Hello"
+              skip_file="binaries-$host/$target/SKIPPED.txt"
               
               total_count=$((total_count + 1))
               
               echo -n "Testing $host -> $target: "
+              
+              # Check if this build was skipped
+              if [ -f "$skip_file" ]; then
+                echo "⚠️ SKIPPED - $(cat "$skip_file")"
+                continue
+              fi
               
               if [ ! -f "$binary_path" ]; then
                 echo "❌ Binary not found: $binary_path"
@@ -222,9 +291,12 @@ jobs:
                 echo "  Error output: $output"
                 
                 # Try to get more diagnostic info
-                if command -v ldd >/dev/null 2>&1; then
+                if command -v ldd >/dev/null 2>&1 && [[ "$target" == linux-* ]]; then
                   echo "  Library dependencies:"
                   ldd "$binary_path" 2>&1 | head -20
+                elif command -v otool >/dev/null 2>&1 && [[ "$target" == osx-* ]]; then
+                  echo "  Library dependencies:"
+                  otool -L "$binary_path" 2>&1 | head -20
                 fi
               fi
               
@@ -311,7 +383,7 @@ jobs:
           echo "| Target Platform | Windows Host | macOS x64 Host | macOS ARM64 Host | Runtime Validation |" >> platform-report.md
           echo "|-----------------|--------------|----------------|------------------|-------------------|" >> platform-report.md
           
-          for target in linux-x64 linux-arm64 linux-musl-x64 linux-musl-arm64; do
+          for target in linux-x64 linux-arm64 linux-musl-x64 linux-musl-arm64 osx-x64 osx-arm64; do
             win_status="❌"
             mac_x64_status="❌"
             mac_arm64_status="❌"
@@ -323,9 +395,22 @@ jobs:
             [ -f "binaries-macos-arm64/$target/Hello" ] && mac_arm64_status="✅"
             
             # Runtime validation status
-            if [[ "$target" == *"x64"* ]]; then
-              # For x64 targets, check if validation job succeeded by looking for job outcomes
-              # Since we can't easily access job status, we'll be conservative
+            if [[ "$target" == *"x64"* ]] && [[ "$target" == "linux"* ]]; then
+              # For Linux x64 targets, check if validation job succeeded
+              if [ -f "binaries-windows/$target/Hello" ] || [ -f "binaries-macos-x64/$target/Hello" ] || [ -f "binaries-macos-arm64/$target/Hello" ]; then
+                runtime_status="✅ Testable"
+              else
+                runtime_status="❌ No binaries"
+              fi
+            elif [[ "$target" == "osx-x64" ]]; then
+              # For macOS x64 targets
+              if [ -f "binaries-windows/$target/Hello" ] || [ -f "binaries-macos-x64/$target/Hello" ] || [ -f "binaries-macos-arm64/$target/Hello" ]; then
+                runtime_status="✅ Testable"
+              else
+                runtime_status="❌ No binaries"
+              fi
+            elif [[ "$target" == "osx-arm64" ]]; then
+              # For macOS ARM64 targets
               if [ -f "binaries-windows/$target/Hello" ] || [ -f "binaries-macos-x64/$target/Hello" ] || [ -f "binaries-macos-arm64/$target/Hello" ]; then
                 runtime_status="✅ Testable"
               else
