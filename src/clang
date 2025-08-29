@@ -153,6 +153,19 @@ if [ "$is_windows_target" = true ] && [ -n "$response_file" ] && [ -f "$response
     # fi
     
     # Add library search path for MinGW stub libraries
+    mkdir -p /tmp/mingw-stubs
+    
+    # Create stub libraries for MSVC runtime libraries that don't exist in MinGW
+    # These are empty archives that satisfy the linker requirements
+    if [[ ! -f /tmp/mingw-stubs/libLIBCMT.a ]]; then
+        # Create an empty object file and add it to an archive
+        echo | "$ZIG_CMD" cc -c -o /tmp/mingw-stubs/empty.o -x c -
+        ar rcs /tmp/mingw-stubs/libLIBCMT.a /tmp/mingw-stubs/empty.o
+        ar rcs /tmp/mingw-stubs/libOLDNAMES.a /tmp/mingw-stubs/empty.o
+        ar rcs /tmp/mingw-stubs/liblibcpmt.a /tmp/mingw-stubs/empty.o
+        rm -f /tmp/mingw-stubs/empty.o
+    fi
+    
     args="$args -L/tmp/mingw-stubs"
     
     # Run zig cc with modified response file
