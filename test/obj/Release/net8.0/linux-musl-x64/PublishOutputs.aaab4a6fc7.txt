@@ -1,0 +1,2 @@
+/home/runner/work/PublishAotCross/PublishAotCross/test/bin/Release/net8.0/linux-musl-x64/publish/Hello
+/home/runner/work/PublishAotCross/PublishAotCross/test/bin/Release/net8.0/linux-musl-x64/publish/Hello.pdb

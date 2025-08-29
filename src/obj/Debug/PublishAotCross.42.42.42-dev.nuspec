@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>PublishAotCross</id>
+    <version>42.42.42-dev</version>
+    <authors>Michal Strehovsky</authors>
+    <license type="expression">MIT</license>
+    <licenseUrl>https://licenses.nuget.org/MIT</licenseUrl>
+    <readme>README.md</readme>
+    <projectUrl>https://github.com/MichalStrehovsky/PublishAotCross</projectUrl>
+    <description>MSBuild targets to aid in crosscompiling Native AOT publishing.</description>
+    <repository type="git" commit="5420a7d454e1002be7bee6990d7a2bfe953901b3" />
+    <dependencies>
+      <group targetFramework=".NETStandard2.0" />
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="/home/runner/work/PublishAotCross/PublishAotCross/src/PublishAotCross.targets" target="build/PublishAotCross.targets" />
+    <file src="/home/runner/work/PublishAotCross/PublishAotCross/src/Crosscompile.targets" target="build/Crosscompile.targets" />
+    <file src="/home/runner/work/PublishAotCross/PublishAotCross/src/clang.cmd" target="build/clang.cmd" />
+    <file src="/home/runner/work/PublishAotCross/PublishAotCross/README.md" target="/README.md" />
+  </files>
+</package>

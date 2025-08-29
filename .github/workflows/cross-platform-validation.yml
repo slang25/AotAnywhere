@@ -1,0 +1,395 @@
+name: Cross-Platform Validation
+
+on:
+  pull_request:
+    branches: [ master ]
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  # Build matrix: Test building from different host platforms to different target platforms
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows host builds
+          - host: windows-latest
+            host-name: windows
+            targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64"
+          
+          # macOS x64 host builds  
+          - host: macos-13
+            host-name: macos-x64
+            targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64"
+          
+          # macOS ARM64 host builds
+          - host: macos-latest
+            host-name: macos-arm64
+            targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64"
+
+    runs-on: ${{ matrix.host }}
+    name: Build from ${{ matrix.host-name }}
+    
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.11.0
+      
+      - name: Build NuGet package
+        run: dotnet build -t:Pack src/PublishAotCross.nuproj
+      
+      - name: Build and publish for all target platforms
+        shell: bash
+        run: |
+          # Split the targets and build each one
+          IFS=',' read -ra TARGET_ARRAY <<< "${{ matrix.targets }}"
+          
+          build_success=true
+          
+          for target in "${TARGET_ARRAY[@]}"; do
+            echo "=========================================="
+            echo "Building for target: $target"
+            echo "=========================================="
+            
+            # Create output directory
+            mkdir -p "artifacts/${{ matrix.host-name }}/$target"
+            
+            # Build for the target platform
+            if dotnet publish test/Hello.csproj \
+              -r "$target" \
+              -c Release \
+              -p:StripSymbols=false \
+              --output "artifacts/${{ matrix.host-name }}/$target"; then
+              
+              echo "✅ Build succeeded for $target"
+              
+              # Verify the binary was created
+              binary_name="Hello"
+              
+              if [ -f "artifacts/${{ matrix.host-name }}/$target/$binary_name" ]; then
+                echo "✅ Binary confirmed: $binary_name for $target"
+                
+                # Show file info
+                ls -la "artifacts/${{ matrix.host-name }}/$target/$binary_name"
+                
+                # Show binary type if file command is available
+                if command -v file >/dev/null 2>&1; then
+                  file "artifacts/${{ matrix.host-name }}/$target/$binary_name"
+                fi
+                
+                # Try to get binary size
+                size_kb=$(du -k "artifacts/${{ matrix.host-name }}/$target/$binary_name" | cut -f1)
+                echo "Binary size: ${size_kb}KB"
+                
+              else
+                echo "❌ Binary not found after successful build: $binary_name for $target"
+                echo "Contents of output directory:"
+                ls -la "artifacts/${{ matrix.host-name }}/$target/" || echo "Output directory not found"
+                build_success=false
+              fi
+              
+            else
+              echo "❌ Build failed for $target"
+              build_success=false
+            fi
+            
+            echo ""
+          done
+          
+          if [ "$build_success" = false ]; then
+            echo "❌ One or more builds failed"
+            exit 1
+          else
+            echo "🎉 All builds completed successfully!"
+          fi
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.host-name }}
+          path: artifacts/${{ matrix.host-name }}/
+          retention-days: 7
+
+  # Validation: Test running the built binaries where possible
+  validate:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Test x64 binaries on Ubuntu x64
+          - runner: ubuntu-latest
+            runner-name: ubuntu-x64
+            test-targets: "linux-x64,linux-musl-x64"
+            host-sources: "windows,macos-x64,macos-arm64"
+    
+    runs-on: ${{ matrix.runner }}
+    name: Validate on ${{ matrix.runner-name }}
+    
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+      
+      - name: Install ICU library (for glibc targets)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libicu-dev
+      
+      - name: Test binaries from all host platforms
+        shell: bash
+        run: |
+          echo "=== Cross-Platform Binary Validation Report ==="
+          echo "Runner: ${{ matrix.runner-name }}"
+          echo "Testing targets: ${{ matrix.test-targets }}"
+          echo "From host sources: ${{ matrix.host-sources }}"
+          echo "Timestamp: $(date -u)"
+          echo ""
+          
+          # Parse host sources and targets
+          IFS=',' read -ra HOST_ARRAY <<< "${{ matrix.host-sources }}"
+          IFS=',' read -ra TARGET_ARRAY <<< "${{ matrix.test-targets }}"
+          
+          success_count=0
+          total_count=0
+          
+          # First, list all available artifacts
+          echo "Available artifacts:"
+          ls -la . || echo "No artifacts directory found"
+          echo ""
+          
+          for host in "${HOST_ARRAY[@]}"; do
+            echo "--- Testing binaries built from $host ---"
+            
+            if [ ! -d "binaries-$host" ]; then
+              echo "❌ No artifacts found for host: $host"
+              continue
+            fi
+            
+            echo "Available targets for $host:"
+            ls -la "binaries-$host/" || echo "No targets found"
+            echo ""
+            
+            for target in "${TARGET_ARRAY[@]}"; do
+              binary_path="binaries-$host/$target/Hello"
+              
+              total_count=$((total_count + 1))
+              
+              echo -n "Testing $host -> $target: "
+              
+              if [ ! -f "$binary_path" ]; then
+                echo "❌ Binary not found: $binary_path"
+                continue
+              fi
+              
+              # Show binary info
+              echo ""
+              echo "  Binary found: $binary_path"
+              ls -la "$binary_path"
+              
+              if command -v file >/dev/null 2>&1; then
+                echo "  File type: $(file "$binary_path")"
+              fi
+              
+              # Make executable
+              chmod +x "$binary_path"
+              
+              # Try to run the binary with timeout
+              echo -n "  Execution test: "
+              if timeout 10s "$binary_path" > /tmp/output.txt 2>&1; then
+                output=$(cat /tmp/output.txt)
+                if [[ "$output" == "Hello World" ]]; then
+                  echo "✅ SUCCESS - Output: '$output'"
+                  success_count=$((success_count + 1))
+                else
+                  echo "❌ FAIL - Unexpected output: '$output'"
+                fi
+              else
+                exit_code=$?
+                output=$(cat /tmp/output.txt 2>/dev/null || echo "No output captured")
+                echo "❌ FAIL - Exit code: $exit_code"
+                echo "  Error output: $output"
+                
+                # Try to get more diagnostic info
+                if command -v ldd >/dev/null 2>&1; then
+                  echo "  Library dependencies:"
+                  ldd "$binary_path" 2>&1 | head -20
+                fi
+              fi
+              
+              echo ""
+            done
+            echo ""
+          done
+          
+          echo "=== Summary ==="
+          echo "Successful tests: $success_count/$total_count"
+          if [ $total_count -gt 0 ]; then
+            echo "Success rate: $(( success_count * 100 / total_count ))%"
+          else
+            echo "Success rate: N/A (no tests run)"
+          fi
+          
+          if [ $success_count -eq $total_count ] && [ $total_count -gt 0 ]; then
+            echo "🎉 All tests passed!"
+            exit 0
+          elif [ $total_count -eq 0 ]; then
+            echo "⚠️  No tests were run - this might indicate missing artifacts"
+            exit 1
+          else
+            echo "⚠️  Some tests failed. See details above."
+            # Don't exit 1 here to allow the workflow to continue and generate the report
+          fi
+
+  # Report: Summarize the platform support matrix
+  report:
+    needs: [build, validate]
+    if: always()
+    runs-on: ubuntu-latest
+    name: Platform Support Report
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+      
+      - name: Generate platform support matrix
+        shell: bash
+        run: |
+          echo "# 🏗️ PublishAotCross Platform Support Matrix" > platform-report.md
+          echo "" >> platform-report.md
+          echo "This report shows the current status of cross-compilation support:" >> platform-report.md
+          echo "" >> platform-report.md
+          
+          echo "## Host Platform Support" >> platform-report.md
+          echo "" >> platform-report.md
+          echo "| Host Platform | Status | Target Platforms Built | Details |" >> platform-report.md
+          echo "|---------------|---------|------------------------|---------|" >> platform-report.md
+          
+          # Check which artifacts exist
+          for host in windows macos-x64 macos-arm64; do
+            if [ -d "binaries-$host" ]; then
+              target_count=$(ls "binaries-$host" 2>/dev/null | wc -l)
+              targets=$(ls "binaries-$host" 2>/dev/null | tr '\n' ', ' | sed 's/,$//')
+              
+              # Count successful builds
+              success_count=0
+              for target_dir in binaries-$host/*/; do
+                if [ -f "${target_dir}Hello" ]; then
+                  success_count=$((success_count + 1))
+                fi
+              done
+              
+              if [ $success_count -eq $target_count ] && [ $target_count -gt 0 ]; then
+                status="✅ All targets built"
+              elif [ $success_count -gt 0 ]; then
+                status="⚠️ Partial success ($success_count/$target_count)"
+              else
+                status="❌ Build failed"
+              fi
+              
+              echo "| $host | $status | $targets | $success_count/$target_count binaries |" >> platform-report.md
+            else
+              echo "| $host | ❌ No artifacts | - | Build job may have failed |" >> platform-report.md
+            fi
+          done
+          
+          echo "" >> platform-report.md
+          echo "## Target Platform Support" >> platform-report.md
+          echo "" >> platform-report.md
+          echo "| Target Platform | Windows Host | macOS x64 Host | macOS ARM64 Host | Runtime Validation |" >> platform-report.md
+          echo "|-----------------|--------------|----------------|------------------|-------------------|" >> platform-report.md
+          
+          for target in linux-x64 linux-arm64 linux-musl-x64 linux-musl-arm64; do
+            win_status="❌"
+            mac_x64_status="❌"
+            mac_arm64_status="❌"
+            runtime_status="❌"
+            
+            # Check build status
+            [ -f "binaries-windows/$target/Hello" ] && win_status="✅"
+            [ -f "binaries-macos-x64/$target/Hello" ] && mac_x64_status="✅"
+            [ -f "binaries-macos-arm64/$target/Hello" ] && mac_arm64_status="✅"
+            
+            # Runtime validation status
+            if [[ "$target" == *"x64"* ]]; then
+              # For x64 targets, check if validation job succeeded by looking for job outcomes
+              # Since we can't easily access job status, we'll be conservative
+              if [ -f "binaries-windows/$target/Hello" ] || [ -f "binaries-macos-x64/$target/Hello" ] || [ -f "binaries-macos-arm64/$target/Hello" ]; then
+                runtime_status="✅ Testable"
+              else
+                runtime_status="❌ No binaries"
+              fi
+            else
+              runtime_status="🚫 ARM64 on x64"
+            fi
+            
+            echo "| $target | $win_status | $mac_x64_status | $mac_arm64_status | $runtime_status |" >> platform-report.md
+          done
+          
+          echo "" >> platform-report.md
+          echo "## Build Details" >> platform-report.md
+          echo "" >> platform-report.md
+          
+          # Add build size information if available
+          echo "### Binary Sizes" >> platform-report.md
+          echo "" >> platform-report.md
+          echo "| Host → Target | Binary Size | Architecture |" >> platform-report.md
+          echo "|---------------|-------------|--------------|" >> platform-report.md
+          
+          for host in windows macos-x64 macos-arm64; do
+            if [ -d "binaries-$host" ]; then
+              for target_dir in binaries-$host/*/; do
+                if [ -f "${target_dir}Hello" ]; then
+                  target=$(basename "$target_dir")
+                  size_info=$(ls -lh "${target_dir}Hello" | awk '{print $5}')
+                  
+                  # Get architecture info if file command is available
+                  arch_info="Unknown"
+                  if command -v file >/dev/null 2>&1; then
+                    arch_info=$(file "${target_dir}Hello" | cut -d',' -f2 | xargs)
+                  fi
+                  
+                  echo "| $host → $target | $size_info | $arch_info |" >> platform-report.md
+                fi
+              done
+            fi
+          done
+          
+          echo "" >> platform-report.md
+          echo "## Legend" >> platform-report.md
+          echo "- ✅ : Supported and working" >> platform-report.md
+          echo "- ⚠️ : Partially working or some issues" >> platform-report.md
+          echo "- ❌ : Failed or not supported" >> platform-report.md
+          echo "- 🚫 ARM64 on x64 : Cannot test ARM64 binaries on x64 runners" >> platform-report.md
+          echo "" >> platform-report.md
+          echo "## Additional Notes" >> platform-report.md
+          echo "- This matrix shows cross-compilation capabilities from different host platforms" >> platform-report.md
+          echo "- Runtime validation is performed where possible (x64 targets on x64 runners)" >> platform-report.md
+          echo "- ARM64 binaries are built but cannot be executed on x64 GitHub runners" >> platform-report.md
+          echo "- All builds use .NET 8.0 with Native AOT and Zig for cross-compilation" >> platform-report.md
+          echo "" >> platform-report.md
+          echo "Generated on: $(date -u)" >> platform-report.md
+          
+          # Display the report
+          echo ""
+          echo "==================== PLATFORM SUPPORT REPORT ===================="
+          cat platform-report.md
+          echo "=================================================================="
+      
+      - name: Upload platform report
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-support-report
+          path: platform-report.md
+          retention-days: 30

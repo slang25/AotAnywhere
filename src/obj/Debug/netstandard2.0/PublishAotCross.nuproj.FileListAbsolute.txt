@@ -1,0 +1,2 @@
+/home/runner/work/PublishAotCross/PublishAotCross/src/bin/Debug/netstandard2.0/PublishAotCross.deps.json
+/home/runner/work/PublishAotCross/PublishAotCross/src/obj/Debug/netstandard2.0/PublishAotCross.nuproj.AssemblyReference.cache

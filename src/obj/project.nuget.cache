@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "7viPci26xEG7SHL8ngtMvHlXdDs1KuXT3Su12TbA4cAEfJQqmi3qXp/ks+tr+5YKl810xhNiZXPtAp/VX+BQyA==",
+  "success": true,
+  "projectFilePath": "/home/runner/work/PublishAotCross/PublishAotCross/src/PublishAotCross.nuproj",
+  "expectedPackageFiles": [
+    "/home/runner/.nuget/packages/microsoft.netcore.platforms/1.1.0/microsoft.netcore.platforms.1.1.0.nupkg.sha512",
+    "/home/runner/.nuget/packages/netstandard.library/2.0.3/netstandard.library.2.0.3.nupkg.sha512"
+  ],
+  "logs": []
+}

@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "dgSpecHash": "PFz6FRZHEEfVazcUlfCQnOh1Z+DhVd32GyYbN0mRsuuFZINvN65eA7WgANyv+vujxSLMyCzCw0tps4ZtLF464A==",
+  "success": true,
+  "projectFilePath": "/home/runner/work/PublishAotCross/PublishAotCross/test/Hello.csproj",
+  "expectedPackageFiles": [
+    "/home/runner/.nuget/packages/microsoft.dotnet.ilcompiler/8.0.19/microsoft.dotnet.ilcompiler.8.0.19.nupkg.sha512",
+    "/home/runner/.nuget/packages/microsoft.net.illink.tasks/8.0.19/microsoft.net.illink.tasks.8.0.19.nupkg.sha512",
+    "/home/runner/.nuget/packages/runtime.linux-arm64.microsoft.dotnet.ilcompiler/8.0.19/runtime.linux-arm64.microsoft.dotnet.ilcompiler.8.0.19.nupkg.sha512",
+    "/home/runner/.nuget/packages/microsoft.netcore.app.runtime.linux-arm64/8.0.19/microsoft.netcore.app.runtime.linux-arm64.8.0.19.nupkg.sha512",
+    "/home/runner/.nuget/packages/microsoft.aspnetcore.app.runtime.linux-arm64/8.0.19/microsoft.aspnetcore.app.runtime.linux-arm64.8.0.19.nupkg.sha512",
+    "/home/runner/.nuget/packages/runtime.linux-x64.microsoft.dotnet.ilcompiler/8.0.19/runtime.linux-x64.microsoft.dotnet.ilcompiler.8.0.19.nupkg.sha512",
+    "/home/runner/.nuget/packages/microsoft.netcore.app.host.linux-arm64/8.0.19/microsoft.netcore.app.host.linux-arm64.8.0.19.nupkg.sha512"
+  ],
+  "logs": []
+}
