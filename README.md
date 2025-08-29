@@ -28,6 +28,39 @@ By default it relies on Zig provided by the unofficial [Vezel.Zig.Toolsets](http
 
     If you skipped the second optional step to download llvm-objcopy, you must also pass `/p:StripSymbols=false` to the publish command, or you'll see an error instructing you to do that.
 
+## Runtime Dependencies on Target Linux Systems
+
+When running the cross-compiled binaries on Linux systems, you may encounter runtime dependency errors. Here are the most common issues and solutions:
+
+### ICU Library Missing
+
+If you see an error like:
+```
+Process terminated. Couldn't find a valid ICU package installed on the system. Please install libicu (or icu-libs) using your package manager and try again.
+```
+
+**Solution 1 (Recommended):** Install ICU on the target Linux system:
+```bash
+# Ubuntu/Debian
+sudo apt-get install libicu-dev
+
+# CentOS/RHEL/Fedora
+sudo yum install libicu-devel
+# or for newer versions:
+sudo dnf install libicu-devel
+
+# Alpine Linux
+sudo apk add icu-libs
+```
+
+**Solution 2:** Build with invariant globalization (no ICU dependency):
+```bash
+dotnet publish -r linux-x64 /p:InvariantGlobalization=true
+```
+
+Note: Using invariant globalization disables culture-specific formatting, sorting, and other globalization features.
+
+## Advanced Configuration
 
 If you don't want to use Zig from the Vezel.Zig.Toolsets NuGet package, you can specify `/p:UseExternalZig=true`. This will use whatever Zig is on your PATH. [Download](https://ziglang.org/download/) an archive with Zig for your host machine, extract it and place it on your PATH.
 
