@@ -114,8 +114,10 @@ if [ "$is_windows_target" = true ] && [ -n "$response_file" ] && [ -f "$response
     # Update args to use the modified response file
     args=$(echo "$args" | sed "s|@$response_file|@$temp_response_file|g")
     
-    # Add flags for MinGW compatibility and ignore missing MSVC libraries
-    args="$args -Wl,--allow-multiple-definition"
+    # Add flags for MinGW compatibility - only on Linux hosts where this flag is supported
+    if [[ "$(uname)" == "Linux" ]]; then
+        args="$args -Wl,--allow-multiple-definition"
+    fi
     
     # Run zig cc with modified response file
     zig cc $args
