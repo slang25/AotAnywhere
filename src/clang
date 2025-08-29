@@ -53,24 +53,52 @@ elif [ "$is_macos_target" = true ]; then
     # Native macOS compilation - use system clang instead of zig
     echo "Native macOS compilation, using system clang..."
     
-    # Find the actual system clang (not our wrapper) by temporarily removing our directory from PATH
-    ORIGINAL_PATH="$PATH"
-    # Remove the directory containing this script from PATH
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    PATH="${PATH//:$SCRIPT_DIR:/:}"
-    PATH="${PATH/#$SCRIPT_DIR:/}"
-    PATH="${PATH/%:$SCRIPT_DIR/}"
+    # Find the actual system clang (not our wrapper) by checking common system locations
+    SYSTEM_CLANG=""
     
-    # Find system clang
-    SYSTEM_CLANG=$(command -v clang)
+    # Check common system locations for clang
+    for clang_path in /usr/bin/clang /usr/local/bin/clang /opt/homebrew/bin/clang; do
+        if [ -x "$clang_path" ]; then
+            SYSTEM_CLANG="$clang_path"
+            break
+        fi
+    done
     
-    # Restore original PATH
-    PATH="$ORIGINAL_PATH"
+    # If not found in common locations, try PATH manipulation as fallback
+    if [ -z "$SYSTEM_CLANG" ]; then
+        ORIGINAL_PATH="$PATH"
+        # Remove the directory containing this script from PATH more thoroughly
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        # Use a more robust approach to remove script directory from PATH
+        NEW_PATH=""
+        IFS=':'
+        for path_entry in $PATH; do
+            # Convert to absolute path for comparison
+            if [ -d "$path_entry" ]; then
+                abs_path=$(cd "$path_entry" 2>/dev/null && pwd)
+                if [ "$abs_path" != "$SCRIPT_DIR" ]; then
+                    if [ -z "$NEW_PATH" ]; then
+                        NEW_PATH="$path_entry"
+                    else
+                        NEW_PATH="$NEW_PATH:$path_entry"
+                    fi
+                fi
+            fi
+        done
+        unset IFS
+        
+        # Temporarily use the new PATH to find system clang
+        PATH="$NEW_PATH"
+        SYSTEM_CLANG=$(command -v clang 2>/dev/null)
+        PATH="$ORIGINAL_PATH"
+    fi
     
-    if [ -n "$SYSTEM_CLANG" ] && [ "$SYSTEM_CLANG" != "$SCRIPT_DIR/clang" ]; then
+    if [ -n "$SYSTEM_CLANG" ] && [ -x "$SYSTEM_CLANG" ]; then
         exec "$SYSTEM_CLANG" "$@"
     else
         echo "Error: Could not find system clang for native macOS compilation"
+        echo "Searched locations: /usr/bin/clang, /usr/local/bin/clang, /opt/homebrew/bin/clang"
+        echo "Script directory: $SCRIPT_DIR"
         exit 1
     fi
     
