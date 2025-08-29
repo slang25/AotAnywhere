@@ -387,6 +387,9 @@ jobs:
           echo "==================== PLATFORM SUPPORT REPORT ===================="
           cat platform-report.md
           echo "=================================================================="
+          
+          # Add the report to the GitHub Actions workflow summary
+          cat platform-report.md >> $GITHUB_STEP_SUMMARY
       
       - name: Upload platform report
         uses: actions/upload-artifact@v4
