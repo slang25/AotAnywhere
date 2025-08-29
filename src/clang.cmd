@@ -8,20 +8,36 @@
 
 set args=%*
 
-rem Works around zlib not being available with zig. This is not great.
-set args=%args:-lz =%
+rem Detect if this is a macOS target by looking for macOS-specific flags
+echo %args% | findstr /C:"-apple-darwin" /C:"-framework" /C:"-exported_symbols_list" >nul
+if not errorlevel 1 (
+    rem macOS-specific argument handling
+    echo Detected macOS target, applying macOS-specific fixes...
+    
+    rem Handle macOS-specific flags that zig doesn't support
+    set args=%args:-ld_classic =%
+    
+    rem Keep essential macOS frameworks and libraries
+    rem Don't remove these: -framework, -lobjc, -lswiftCore, etc.
+    
+) else (
+    rem Linux-specific argument handling (existing logic)
+    
+    rem Works around zlib not being available with zig. This is not great.
+    set args=%args:-lz =%
 
-rem Work around a .NET 8 Preview 6 issue
-set args=%args:'-Wl,-rpath,$ORIGIN'=-Wl,-rpath,$ORIGIN%
+    rem Work around a .NET 8 Preview 6 issue
+    set args=%args:'-Wl,-rpath,$ORIGIN'=-Wl,-rpath,$ORIGIN%
 
-rem Work around parameters unsupported by zig. Just drop them from the command line.
-set args=%args:--discard-all=--as-needed%
-set args=%args:-Wl,-pie =%
-set args=%args:-pie =%
-set args=%args:-Wl,-e0x0 =%
+    rem Work around parameters unsupported by zig. Just drop them from the command line.
+    set args=%args:--discard-all=--as-needed%
+    set args=%args:-Wl,-pie =%
+    set args=%args:-pie =%
+    set args=%args:-Wl,-e0x0 =%
 
-rem Works around zig linker dropping necessary parts of the executable.
-set args=-Wl,-u,__Module %args%
+    rem Works around zig linker dropping necessary parts of the executable.
+    set args=-Wl,-u,__Module %args%
+)
 
 rem Run zig cc
 zig cc %args%

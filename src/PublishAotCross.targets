@@ -1,6 +1,6 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
-  <!-- Windows and macOS hosts targeting Linux are supported -->
-  <Import Project="Crosscompile.targets" Condition="$(RuntimeIdentifier.Contains('linux')) and ($([MSBuild]::IsOSPlatform('Windows')) or $([MSBuild]::IsOSPlatform('OSX')))" />
+  <!-- Windows and macOS hosts targeting Linux and macOS are supported -->
+  <Import Project="Crosscompile.targets" Condition="($(RuntimeIdentifier.Contains('linux')) or $(RuntimeIdentifier.Contains('osx'))) and ($([MSBuild]::IsOSPlatform('Windows')) or $([MSBuild]::IsOSPlatform('OSX')))" />
 
 </Project>

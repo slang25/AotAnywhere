@@ -78,44 +78,20 @@ jobs:
                 build_result="failed"
               fi
             elif [[ "$target" == osx-* ]]; then
-              echo "Native macOS build (without PublishAotCross)..."
-              # For macOS targets, check if we can build natively
-              current_os="${{ matrix.host-name }}"
-              if [[ "$current_os" == "windows" ]]; then
-                echo "⚠️ Skipping macOS target $target on Windows host (not supported for native compilation)"
-                echo "Creating placeholder to indicate skipped build..."
-                echo "SKIPPED: macOS target on Windows host" > "artifacts/${{ matrix.host-name }}/$target/SKIPPED.txt"
-                build_result="skipped"
+              echo "Cross-compiling to macOS target using PublishAotCross..."
+              # For macOS targets, use PublishAotCross for cross-compilation
+              if dotnet publish test/Hello.csproj \
+                -r "$target" \
+                -c Release \
+                -p:StripSymbols=false \
+                -p:InvariantGlobalization=true \
+                --output "artifacts/${{ matrix.host-name }}/$target"; then
+                
+                echo "✅ Cross-compilation build succeeded for $target"
+                build_result="success"
               else
-                # Build natively on macOS without PublishAotCross
-                # Create a temporary project file without PublishAotCross reference
-                cp test/Hello.csproj "test/Hello-native.csproj"
-                # Remove the PublishAotCross import
-                sed -i.bak '/PublishAotCross.targets/d' "test/Hello-native.csproj"
-                
-                if dotnet publish test/Hello-native.csproj \
-                  -r "$target" \
-                  -c Release \
-                  -p:StripSymbols=false \
-                  -p:InvariantGlobalization=true \
-                  --output "artifacts/${{ matrix.host-name }}/$target"; then
-                  
-                  echo "✅ Native macOS build succeeded for $target"
-                  
-                  # Rename the binary from Hello-native to Hello
-                  if [ -f "artifacts/${{ matrix.host-name }}/$target/Hello-native" ]; then
-                    mv "artifacts/${{ matrix.host-name }}/$target/Hello-native" "artifacts/${{ matrix.host-name }}/$target/Hello"
-                    echo "✅ Binary renamed from Hello-native to Hello"
-                  fi
-                  
-                  build_result="success"
-                else
-                  echo "❌ Native macOS build failed for $target"
-                  build_result="failed"
-                fi
-                
-                # Clean up temporary file
-                rm -f "test/Hello-native.csproj" "test/Hello-native.csproj.bak"
+                echo "❌ Cross-compilation build failed for $target"
+                build_result="failed"
               fi
             else
               echo "❌ Unknown target platform: $target"

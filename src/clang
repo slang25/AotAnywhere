@@ -9,20 +9,40 @@ fi
 # Get all arguments
 args="$@"
 
-# Works around zlib not being available with zig. This is not great.
-args="${args//-lz /}"
+# Detect if this is a macOS target by looking for macOS-specific flags or target
+is_macos_target=false
+if [[ "$args" == *"-apple-darwin"* ]] || [[ "$args" == *"-framework"* ]] || [[ "$args" == *"-exported_symbols_list"* ]]; then
+    is_macos_target=true
+fi
 
-# Work around a .NET 8 Preview 6 issue
-args="${args//\'-Wl,-rpath,\$ORIGIN\'/-Wl,-rpath,\$ORIGIN}"
+if [ "$is_macos_target" = true ]; then
+    # macOS-specific argument handling
+    echo "Detected macOS target, applying macOS-specific fixes..."
+    
+    # Handle macOS-specific flags that zig doesn't support
+    args="${args//-ld_classic /}"
+    
+    # Keep essential macOS frameworks and libraries
+    # Don't remove these: -framework, -lobjc, -lswiftCore, etc.
+    
+else
+    # Linux-specific argument handling (existing logic)
+    
+    # Works around zlib not being available with zig. This is not great.
+    args="${args//-lz /}"
 
-# Work around parameters unsupported by zig. Just drop them from the command line.
-args="${args//--discard-all/--as-needed}"
-args="${args//-Wl,-pie /}"
-args="${args//-pie /}"
-args="${args//-Wl,-e0x0 /}"
+    # Work around a .NET 8 Preview 6 issue
+    args="${args//\'-Wl,-rpath,\$ORIGIN\'/-Wl,-rpath,\$ORIGIN}"
 
-# Works around zig linker dropping necessary parts of the executable.
-args="-Wl,-u,__Module $args"
+    # Work around parameters unsupported by zig. Just drop them from the command line.
+    args="${args//--discard-all/--as-needed}"
+    args="${args//-Wl,-pie /}"
+    args="${args//-pie /}"
+    args="${args//-Wl,-e0x0 /}"
+
+    # Works around zig linker dropping necessary parts of the executable.
+    args="-Wl,-u,__Module $args"
+fi
 
 # Run zig cc
 zig cc $args
