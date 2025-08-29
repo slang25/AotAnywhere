@@ -57,6 +57,11 @@
       <ZigPath Condition="$(HostRuntimeIdentifier.EndsWith('-arm64'))">$(PkgVezel_Zig_Toolsets_osx-arm64)/tools</ZigPath>
     </PropertyGroup>
 
+    <PropertyGroup Condition="$(HostRuntimeIdentifier.StartsWith('linux-'))">
+      <ZigPath Condition="$(HostRuntimeIdentifier.EndsWith('-x64'))">$(PkgVezel_Zig_Toolsets_linux-x64)/tools</ZigPath>
+      <ZigPath Condition="$(HostRuntimeIdentifier.EndsWith('-arm64'))">$(PkgVezel_Zig_Toolsets_linux-arm64)/tools</ZigPath>
+    </PropertyGroup>
+
     <PrependPath Condition="'$(UseExternalZig)' == 'false'" Value="$(ZigPath)" />
 
   </Target>
@@ -73,10 +78,18 @@
       <CrossCompileArch />
       <CrossCompileArch Condition="$(CrossCompileRid.EndsWith('-x64'))">x86_64</CrossCompileArch>
       <CrossCompileArch Condition="$(CrossCompileRid.EndsWith('-arm64'))">aarch64</CrossCompileArch>
+      <CrossCompileArch Condition="$(CrossCompileRid.EndsWith('-x86'))">i386</CrossCompileArch>
 
       <TargetTriple />
-      <TargetTriple Condition="'$(CrossCompileArch)' != ''">$(CrossCompileArch)-linux-gnu</TargetTriple>
+      <!-- Linux targets -->
+      <TargetTriple Condition="'$(CrossCompileArch)' != '' and $(CrossCompileRid.Contains('linux'))">$(CrossCompileArch)-linux-gnu</TargetTriple>
       <TargetTriple Condition="'$(CrossCompileArch)' != '' and ($(CrossCompileRid.StartsWith('linux-musl')) or $(CrossCompileRid.StartsWith('alpine')))">$(CrossCompileArch)-linux-musl</TargetTriple>
+      
+      <!-- Windows targets -->
+      <TargetTriple Condition="'$(CrossCompileArch)' != '' and $(CrossCompileRid.Contains('win'))">$(CrossCompileArch)-windows-gnu</TargetTriple>
+      
+      <!-- Use clang wrapper for all targets when cross-compiling -->
+      <CppLinker Condition="'$(TargetTriple)' != ''">clang</CppLinker>
     </PropertyGroup>
 
     <ItemGroup>

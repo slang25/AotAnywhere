@@ -37,43 +37,13 @@ if [ "$is_windows_target" = true ] && [ -n "$response_file" ] && [ -f "$response
             continue
         fi
         
-        # Handle lines with multiple arguments separated by spaces
-        if [[ "$line" =~ [[:space:]] ]] && [[ ! "$line" =~ ^\" ]]; then
-            # Split line into individual arguments and process each
-            for arg in $line; do
-                # Process each argument individually using same logic below
-                if [[ "$arg" =~ ^/OUT: ]]; then
-                    echo "-o $(echo "$arg" | sed 's|/OUT:||')" >> "$temp_response_file"
-                elif [[ "$arg" =~ ^/DEF: ]]; then
-                    continue
-                elif [[ "$arg" == "/NOLOGO" ]] || [[ "$arg" == "/MANIFEST:NO" ]] || [[ "$arg" == "/INCREMENTAL:NO" ]] || [[ "$arg" == "/NOEXP" ]] || [[ "$arg" == "/NOIMPLIB" ]] || [[ "$arg" =~ ^/NATVIS: ]] || [[ "$arg" == "/NODEFAULTLIB:libucrt.lib" ]] || [[ "$arg" == "/DEFAULTLIB:ucrt.lib" ]] || [[ "$arg" == "/OPT:ICF" ]]; then
-                    continue
-                elif [[ "$arg" == "/DEBUG" ]]; then
-                    echo '"-g"' >> "$temp_response_file"
-                elif [[ "$arg" == "/SUBSYSTEM:CONSOLE" ]]; then
-                    echo '"-Wl,--subsystem,console"' >> "$temp_response_file"
-                elif [[ "$arg" == "/SUBSYSTEM:WINDOWS" ]]; then
-                    echo '"-Wl,--subsystem,windows"' >> "$temp_response_file"
-                elif [[ "$arg" == "/OPT:REF" ]]; then
-                    echo '"-Wl,--gc-sections"' >> "$temp_response_file"
-                elif [[ "$arg" =~ ^/ENTRY: ]]; then
-                    if [[ "$arg" == "/ENTRY:wmainCRTStartup" ]]; then
-                        echo '"-Wl,--entry,wmainCRTStartup"' >> "$temp_response_file"
-                    fi
-                else
-                    echo "\"$arg\"" >> "$temp_response_file"
-                fi
-            done
-            continue
-        fi
-        
         # Convert Windows arguments to Unix equivalents
         if [[ "$line" =~ ^/OUT: ]]; then
             echo "-o $(echo "$line" | sed 's|/OUT:||')" >> "$temp_response_file"
         elif [[ "$line" =~ ^/DEF: ]]; then
             # Skip DEF files - not supported by zig
             continue
-        elif [[ "$line" == "/NOLOGO" ]] || [[ "$line" == "/MANIFEST:NO" ]] || [[ "$line" == "/INCREMENTAL:NO" ]] || [[ "$line" == "/NOEXP" ]] || [[ "$line" == "/NOIMPLIB" ]] || [[ "$line" =~ ^/NATVIS: ]] || [[ "$line" == "/NODEFAULTLIB:libucrt.lib" ]] || [[ "$line" == "/DEFAULTLIB:ucrt.lib" ]] || [[ "$line" == "/OPT:ICF" ]] || [[ "$line" =~ "/NOEXP" ]] || [[ "$line" =~ "/NOIMPLIB" ]]; then
+        elif [[ "$line" == "/NOLOGO" ]] || [[ "$line" == "/MANIFEST:NO" ]] || [[ "$line" == "/INCREMENTAL:NO" ]] || [[ "$line" == "/NOEXP" ]] || [[ "$line" == "/NOIMPLIB" ]] || [[ "$line" =~ ^/NATVIS: ]] || [[ "$line" == "/NODEFAULTLIB:libucrt.lib" ]] || [[ "$line" == "/DEFAULTLIB:ucrt.lib" ]] || [[ "$line" == "/OPT:ICF" ]]; then
             # Skip these unsupported options
             continue
         elif [[ "$line" == "/DEBUG" ]]; then
@@ -82,27 +52,20 @@ if [ "$is_windows_target" = true ] && [ -n "$response_file" ] && [ -f "$response
             echo '"-Wl,--subsystem,console"' >> "$temp_response_file"
         elif [[ "$line" == "/SUBSYSTEM:WINDOWS" ]]; then
             echo '"-Wl,--subsystem,windows"' >> "$temp_response_file"
-        elif [[ "$line" =~ ^/ENTRY: ]] || [[ "$line" =~ "/NOEXP" ]] || [[ "$line" =~ "/NOIMPLIB" ]]; then
-            # Handle multi-word arguments that contain these patterns
-            if [[ "$line" == "/ENTRY:wmainCRTStartup" ]]; then
-                echo '"-Wl,--entry,wmainCRTStartup"' >> "$temp_response_file"
-            else
-                # Skip other /ENTRY arguments and /NOEXP /NOIMPLIB
-                continue
-            fi
+        elif [[ "$line" == "/ENTRY:wmainCRTStartup" ]]; then
+            echo '"-Wl,--entry,wmainCRTStartup"' >> "$temp_response_file"
         elif [[ "$line" == "/OPT:REF" ]]; then
             echo '"-Wl,--gc-sections"' >> "$temp_response_file"
         elif [[ "$line" =~ \.lib\"?$ ]]; then
-            # Handle .lib files
+            # Convert .lib files to -l format for system libraries
             lib_name=$(echo "$line" | sed 's|"||g' | sed 's|\.lib$||')
             case "$lib_name" in
                 advapi32|bcrypt|crypt32|iphlpapi|kernel32|mswsock|ncrypt|normaliz|ntdll|ole32|oleaut32|secur32|user32|version|ws2_32)
-                    # For Windows system libraries, skip them - let zig provide them automatically
-                    continue
+                    echo "\"-l$lib_name\"" >> "$temp_response_file"
                     ;;
                 *)
-                    # For runtime .lib files, keep them as-is
-                    echo "$line" >> "$temp_response_file"
+                    # For runtime .lib files, change extension to .a
+                    echo "$(echo "$line" | sed 's|\.lib|.a|g')" >> "$temp_response_file"
                     ;;
             esac
         else
@@ -114,13 +77,7 @@ if [ "$is_windows_target" = true ] && [ -n "$response_file" ] && [ -f "$response
     # Update args to use the modified response file
     args=$(echo "$args" | sed "s|@$response_file|@$temp_response_file|g")
     
-    # Add flags to avoid automatic library linking issues
-    args="$args -nostdlib -lc"
-    
     # Run zig cc with modified response file
-    echo "=== Modified response file contents ===" >&2
-    cat "$temp_response_file" >&2
-    echo "=== End of response file ===" >&2
     zig cc $args
     
     # Clean up

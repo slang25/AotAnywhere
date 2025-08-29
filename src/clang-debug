@@ -1,0 +1,141 @@
+#!/bin/bash
+
+# Check if zig is available
+if ! command -v zig &> /dev/null; then
+    echo "Error: zig is not on the PATH. Install zig and make sure it's on PATH. Follow instructions at https://github.com/MichalStrehovsky/PublishAotCross."
+    exit 1
+fi
+
+# Get all arguments
+args="$@"
+
+# Check if we have a response file
+response_file=""
+if [[ "$args" == *"@"* ]]; then
+    response_file=$(echo "$args" | grep -o '@[^[:space:]]*' | head -1 | cut -c2-)
+fi
+
+# Check if we're targeting Windows based on the --target argument in response file or args
+is_windows_target=false
+if [[ "$args" == *"--target="*"windows"* ]] || [[ -f "$response_file" && $(cat "$response_file") == *"--target="*"windows"* ]]; then
+    is_windows_target=true
+fi
+
+if [ "$is_windows_target" = true ] && [ -n "$response_file" ] && [ -f "$response_file" ]; then
+    # Process response file for Windows targets
+    temp_response_file="${response_file}.tmp"
+    cp "$response_file" "$temp_response_file"
+    
+    echo "Original response file:" >&2
+    cat "$response_file" >&2
+    
+    # Convert Windows linker arguments to GCC/Clang format in the response file
+    sed -i 's|/OUT:|"-o "|g' "$temp_response_file"
+    sed -i '/\/DEF:/d' "$temp_response_file"  # Remove DEF file - not supported by zig
+    sed -i '/\/NOLOGO/d' "$temp_response_file"
+    sed -i '/\/MANIFEST:NO/d' "$temp_response_file"  # Remove manifest options
+    sed -i 's|/DEBUG|"-g"|g' "$temp_response_file"
+    sed -i '/\/INCREMENTAL:NO/d' "$temp_response_file"
+    sed -i 's|/SUBSYSTEM:CONSOLE|"-Wl,--subsystem,console"|g' "$temp_response_file"
+    sed -i 's|/SUBSYSTEM:WINDOWS|"-Wl,--subsystem,windows"|g' "$temp_response_file"
+    sed -i 's|/ENTRY:wmainCRTStartup|"-Wl,--entry,wmainCRTStartup"|g' "$temp_response_file"
+    sed -i '/\/NOEXP/d' "$temp_response_file"
+    sed -i '/\/NOIMPLIB/d' "$temp_response_file"
+    sed -i '/\/NATVIS:/d' "$temp_response_file"
+    sed -i '/\/NODEFAULTLIB:libucrt.lib/d' "$temp_response_file"
+    sed -i '/\/DEFAULTLIB:ucrt.lib/d' "$temp_response_file"
+    sed -i 's|/OPT:REF|"-Wl,--gc-sections"|g' "$temp_response_file"
+    sed -i '/\/OPT:ICF/d' "$temp_response_file"
+    
+    # Convert Windows library names (quoted and unquoted)
+    sed -i 's|"advapi32\.lib"|"-ladvapi32"|g' "$temp_response_file"
+    sed -i 's|"bcrypt\.lib"|"-lbcrypt"|g' "$temp_response_file"
+    sed -i 's|"crypt32\.lib"|"-lcrypt32"|g' "$temp_response_file"
+    sed -i 's|"iphlpapi\.lib"|"-liphlpapi"|g' "$temp_response_file"
+    sed -i 's|"kernel32\.lib"|"-lkernel32"|g' "$temp_response_file"
+    sed -i 's|"mswsock\.lib"|"-lmswsock"|g' "$temp_response_file"
+    sed -i 's|"ncrypt\.lib"|"-lncrypt"|g' "$temp_response_file"
+    sed -i 's|"normaliz\.lib"|"-lnormaliz"|g' "$temp_response_file"
+    sed -i 's|"ntdll\.lib"|"-lntdll"|g' "$temp_response_file"
+    sed -i 's|"ole32\.lib"|"-lole32"|g' "$temp_response_file"
+    sed -i 's|"oleaut32\.lib"|"-loleaut32"|g' "$temp_response_file"
+    sed -i 's|"secur32\.lib"|"-lsecur32"|g' "$temp_response_file"
+    sed -i 's|"user32\.lib"|"-luser32"|g' "$temp_response_file"
+    sed -i 's|"version\.lib"|"-lversion"|g' "$temp_response_file"
+    sed -i 's|"ws2_32\.lib"|"-lws2_32"|g' "$temp_response_file"
+    
+    # Convert .obj extensions and .lib extensions for runtime files
+    sed -i 's|\.obj"|.obj"|g' "$temp_response_file"
+    sed -i 's|\.lib"|.a"|g' "$temp_response_file"
+    
+    echo "Modified response file:" >&2
+    cat "$temp_response_file" >&2
+    
+    # Update args to use the modified response file
+    args=$(echo "$args" | sed "s|@$response_file|@$temp_response_file|g")
+    
+    echo "Running: zig cc $args" >&2
+    
+    # Run zig cc with modified response file
+    zig cc $args
+    
+    # Clean up
+    rm -f "$temp_response_file"
+elif [ "$is_windows_target" = true ]; then
+    # Process inline arguments for Windows (no response file)
+    args="${args///OUT:/-o }"
+    args="${args///DEF:/-Wl,--output-def,}"
+    args="${args///NOLOGO/}"
+    args="${args///MANIFEST:NO/-Wl,--no-manifest}"
+    args="${args///DEBUG/-g}"
+    args="${args///INCREMENTAL:NO/}"
+    args="${args///SUBSYSTEM:CONSOLE/-Wl,--subsystem,console}"
+    args="${args///SUBSYSTEM:WINDOWS/-Wl,--subsystem,windows}"
+    args="${args///ENTRY:wmainCRTStartup/-Wl,--entry,wmainCRTStartup}"
+    args="${args///NOEXP/}"
+    args="${args///NOIMPLIB/}"
+    args="${args//\/NATVIS:*\.natvis/}"
+    args="${args///NODEFAULTLIB:libucrt.lib/}"
+    args="${args///DEFAULTLIB:ucrt.lib/}"
+    args="${args///OPT:REF/-Wl,--gc-sections}"
+    args="${args///OPT:ICF/}"
+    
+    # Convert Windows library names to Unix-style
+    args="${args//advapi32\.lib/-ladvapi32}"
+    args="${args//bcrypt\.lib/-lbcrypt}"
+    args="${args//crypt32\.lib/-lcrypt32}"
+    args="${args//iphlpapi\.lib/-liphlpapi}"
+    args="${args//kernel32\.lib/-lkernel32}"
+    args="${args//mswsock\.lib/-lmswsock}"
+    args="${args//ncrypt\.lib/-lncrypt}"
+    args="${args//normaliz\.lib/-lnormaliz}"
+    args="${args//ntdll\.lib/-lntdll}"
+    args="${args//ole32\.lib/-lole32}"
+    args="${args//oleaut32\.lib/-loleaut32}"
+    args="${args//secur32\.lib/-lsecur32}"
+    args="${args//user32\.lib/-luser32}"
+    args="${args//version\.lib/-lversion}"
+    args="${args//ws2_32\.lib/-lws2_32}"
+    
+    # Run zig cc
+    zig cc $args
+else
+    # Linux-specific workarounds (existing code)
+    # Works around zlib not being available with zig. This is not great.
+    args="${args//-lz /}"
+
+    # Work around a .NET 8 Preview 6 issue
+    args="${args//\'-Wl,-rpath,\$ORIGIN\'/-Wl,-rpath,\$ORIGIN}"
+
+    # Work around parameters unsupported by zig. Just drop them from the command line.
+    args="${args//--discard-all/--as-needed}"
+    args="${args//-Wl,-pie /}"
+    args="${args//-pie /}"
+    args="${args//-Wl,-e0x0 /}"
+
+    # Works around zig linker dropping necessary parts of the executable.
+    args="-Wl,-u,__Module $args"
+    
+    # Run zig cc
+    zig cc $args
+fi

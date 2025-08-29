@@ -7,12 +7,13 @@ $ dotnet publish -r linux-x64
 Microsoft.NETCore.Native.Publish.targets(59,5): error : Cross-OS native compilation is not supported.
 ```
 
-This NuGet package allows using [Zig](https://ziglang.org/) as the linker/sysroot to allow crosscompiling to linux-x64/linux-arm64/linux-musl-x64/linux-musl-arm64 from Windows and macOS machines.
+This NuGet package allows using [Zig](https://ziglang.org/) as the linker/sysroot to allow crosscompiling to linux-x64/linux-arm64/linux-musl-x64/linux-musl-arm64 from Windows and macOS machines, and to win-x64/win-x86/win-arm64 from macOS and Linux machines.
 
 ## Supported Host Platforms
 
-- **Windows** (x86, x64, arm64)
-- **macOS** (x64, arm64)
+- **Windows** (x86, x64, arm64) - can target Linux
+- **macOS** (x64, arm64) - can target Linux and Windows
+- **Linux** (x64, arm64) - can target Windows
 
 ## Usage
 
@@ -24,6 +25,10 @@ By default it relies on Zig provided by the unofficial [Vezel.Zig.Toolsets](http
     * `dotnet publish -r linux-x64`
     * `dotnet publish -r linux-arm64`
     * `dotnet publish -r linux-musl-x64`
+    * `dotnet publish -r linux-musl-arm64`
+    * `dotnet publish -r win-x64` (from macOS/Linux hosts)
+    * `dotnet publish -r win-x86` (from macOS/Linux hosts)
+    * `dotnet publish -r win-arm64` (from macOS/Linux hosts)
     * `dotnet publish -r linux-musl-arm64`
 
     If you skipped the second optional step to download llvm-objcopy, you must also pass `/p:StripSymbols=false` to the publish command, or you'll see an error instructing you to do that.
@@ -64,5 +69,9 @@ Note: Using invariant globalization disables culture-specific formatting, sortin
 
 If you don't want to use Zig from the Vezel.Zig.Toolsets NuGet package, you can specify `/p:UseExternalZig=true`. This will use whatever Zig is on your PATH. [Download](https://ziglang.org/download/) an archive with Zig for your host machine, extract it and place it on your PATH.
 
+### Windows Target ABI Notes
 
-Even though Zig allows crosscompiling for Windows as well, it's not possible to crosscompile PublishAot like this due to ABI differences (MSVC vs. MingW ABI).
+When targeting Windows from macOS/Linux hosts, this package uses the GNU ABI (MinGW) rather than the MSVC ABI. This means:
+- Generated executables will depend on the MinGW runtime rather than the MSVC runtime
+- For maximum compatibility, you may want to link statically or bundle the required MinGW runtime libraries
+- Some Windows-specific .NET features that rely on MSVC-specific behavior may not work identically

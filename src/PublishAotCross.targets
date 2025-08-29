@@ -3,4 +3,7 @@
   <!-- Windows and macOS hosts targeting Linux are supported -->
   <Import Project="Crosscompile.targets" Condition="$(RuntimeIdentifier.Contains('linux')) and ($([MSBuild]::IsOSPlatform('Windows')) or $([MSBuild]::IsOSPlatform('OSX')))" />
 
+  <!-- macOS and Linux hosts targeting Windows are supported -->
+  <Import Project="Crosscompile.targets" Condition="$(RuntimeIdentifier.Contains('win')) and ($([MSBuild]::IsOSPlatform('OSX')) or $([MSBuild]::IsOSPlatform('Linux')))" />
+
 </Project>

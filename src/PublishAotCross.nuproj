@@ -26,6 +26,10 @@
       <Pack>true</Pack>
       <PackagePath>build</PackagePath>
     </None>
+    <None Include="clang">
+      <Pack>true</Pack>
+      <PackagePath>build</PackagePath>
+    </None>
     <None Include="../README.md">
       <Pack>true</Pack>
       <PackagePath>/</PackagePath>
