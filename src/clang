@@ -18,7 +18,6 @@ fi
 if [ "$is_macos_target" = true ]; then
     # macOS-specific argument handling
     echo "Detected macOS target, applying macOS-specific fixes..."
-    echo "Original args: $args"
     
     # Handle macOS-specific flags that zig doesn't support
     args="${args//-ld_classic /}"
@@ -37,8 +36,6 @@ if [ "$is_macos_target" = true ]; then
     args="${args//-framework CoreFoundation /}"
     args="${args//-framework Foundation /}"
     args="${args//-framework Security /}"
-    
-    echo "Modified args: $args"
     
 else
     # Linux-specific argument handling (existing logic)

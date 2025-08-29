@@ -12,7 +12,24 @@ This NuGet package allows using [Zig](https://ziglang.org/) as the linker/sysroo
 ## Supported Host Platforms
 
 - **Windows** (x86, x64, arm64)
-- **macOS** (x64, arm64)
+- **macOS** (x64, arm64)  
+- **Linux** (x64, arm64)
+
+## Supported Target Platforms
+
+- **Linux** (x64, arm64, glibc, musl) - Full support from all host platforms
+- **macOS** (x64, arm64) - Experimental cross-compilation support with limitations (see below)
+
+### macOS Cross-Compilation
+
+Cross-compilation to macOS targets from Windows and Linux hosts is **experimentally supported** but has important limitations:
+
+- ✅ Basic console applications may work
+- ⚠️ Applications using .NET libraries that depend on Objective-C runtime may fail
+- ⚠️ Applications using platform-specific APIs or native interop may not work
+- ❌ Full feature parity with native macOS builds is not guaranteed
+
+For production macOS builds, using a macOS host is still recommended.
 
 ## Usage
 
