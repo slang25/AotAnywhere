@@ -7,7 +7,14 @@ $ dotnet publish -r linux-x64
 Microsoft.NETCore.Native.Publish.targets(59,5): error : Cross-OS native compilation is not supported.
 ```
 
-This NuGet package allows using [Zig](https://ziglang.org/) as the linker/sysroot to allow crosscompiling to linux-x64/linux-arm64/linux-musl-x64/linux-musl-arm64 from a Windows machine.
+This NuGet package allows using [Zig](https://ziglang.org/) as the linker/sysroot to allow crosscompiling to linux-x64/linux-arm64/linux-musl-x64/linux-musl-arm64 from Windows and macOS machines.
+
+## Supported Host Platforms
+
+- **Windows** (x86, x64, arm64)
+- **macOS** (x64, arm64)
+
+## Usage
 
 By default it relies on Zig provided by the unofficial [Vezel.Zig.Toolsets](https://github.com/vezel-dev/zig-toolsets) NuGet package. You can specify version of this package using the `ZigVersion` property. Instructions for using your own Zig binaries are near the end of this document.
 
