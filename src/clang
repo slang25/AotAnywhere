@@ -15,9 +15,21 @@ if [[ "$args" == *"-apple-darwin"* ]] || [[ "$args" == *"-framework"* ]] || [[ "
     is_macos_target=true
 fi
 
-if [ "$is_macos_target" = true ]; then
-    # macOS-specific argument handling
-    echo "Detected macOS target, applying macOS-specific fixes..."
+# Detect if we're running on macOS (native compilation)
+is_macos_host=false
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    is_macos_host=true
+fi
+
+# Only apply cross-compilation fixes when targeting macOS from a non-macOS host
+is_cross_compiling_to_macos=false
+if [ "$is_macos_target" = true ] && [ "$is_macos_host" = false ]; then
+    is_cross_compiling_to_macos=true
+fi
+
+if [ "$is_cross_compiling_to_macos" = true ]; then
+    # macOS cross-compilation argument handling
+    echo "Cross-compiling to macOS target using PublishAotCross..."
     
     # Handle macOS-specific flags that zig doesn't support
     args="${args//-ld_classic /}"
@@ -36,6 +48,10 @@ if [ "$is_macos_target" = true ]; then
     args="${args//-framework CoreFoundation /}"
     args="${args//-framework Foundation /}"
     args="${args//-framework Security /}"
+    
+elif [ "$is_macos_target" = true ]; then
+    # Native macOS compilation - pass through all arguments unchanged
+    echo "Native macOS compilation, passing through all arguments..."
     
 else
     # Linux-specific argument handling (existing logic)

@@ -11,8 +11,8 @@ set args=%*
 rem Detect if this is a macOS target by looking for macOS-specific flags
 echo %args% | findstr /C:"-apple-darwin" /C:"-framework" /C:"-exported_symbols_list" >nul
 if not errorlevel 1 (
-    rem macOS-specific argument handling
-    echo Detected macOS target, applying macOS-specific fixes...
+    rem We're on Windows (not macOS) and targeting macOS, so this is cross-compilation
+    echo Cross-compiling to macOS target using PublishAotCross...
     
     rem Handle macOS-specific flags that zig doesn't support
     set args=%args:-ld_classic =%
@@ -28,6 +28,9 @@ if not errorlevel 1 (
     rem Remove frameworks that may cause issues in cross-compilation
     set args=%args:-framework CryptoKit =%
     set args=%args:-framework GSS =%
+    set args=%args:-framework CoreFoundation =%
+    set args=%args:-framework Foundation =%
+    set args=%args:-framework Security =%
     
 ) else (
     rem Linux-specific argument handling (existing logic)
