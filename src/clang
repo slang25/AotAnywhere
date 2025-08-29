@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Check if zig is available
+if ! command -v zig &> /dev/null; then
+    echo "Error: zig is not on the PATH. Install zig and make sure it's on PATH. Follow instructions at https://github.com/MichalStrehovsky/PublishAotCross."
+    exit 1
+fi
+
 # Get all arguments
 args="$@"
 
@@ -22,12 +28,6 @@ if [ "$is_macos_target" = true ] && [ "$is_macos_host" = false ]; then
 fi
 
 if [ "$is_cross_compiling_to_macos" = true ]; then
-    # Check if zig is available for cross-compilation
-    if ! command -v zig &> /dev/null; then
-        echo "Error: zig is not on the PATH. Install zig and make sure it's on PATH. Follow instructions at https://github.com/MichalStrehovsky/PublishAotCross."
-        exit 1
-    fi
-    
     # macOS cross-compilation argument handling
     echo "Cross-compiling to macOS target using PublishAotCross..."
     
@@ -50,65 +50,14 @@ if [ "$is_cross_compiling_to_macos" = true ]; then
     args="${args//-framework Security /}"
     
 elif [ "$is_macos_target" = true ]; then
-    # Native macOS compilation - use system clang instead of zig
-    echo "Native macOS compilation, using system clang..."
+    # Native macOS compilation using zig cc
+    echo "Native macOS compilation using zig cc..."
     
-    # Find the actual system clang (not our wrapper) by checking common system locations
-    SYSTEM_CLANG=""
-    
-    # Check common system locations for clang
-    for clang_path in /usr/bin/clang /usr/local/bin/clang /opt/homebrew/bin/clang; do
-        if [ -x "$clang_path" ]; then
-            SYSTEM_CLANG="$clang_path"
-            break
-        fi
-    done
-    
-    # If not found in common locations, try PATH manipulation as fallback
-    if [ -z "$SYSTEM_CLANG" ]; then
-        ORIGINAL_PATH="$PATH"
-        # Remove the directory containing this script from PATH more thoroughly
-        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        # Use a more robust approach to remove script directory from PATH
-        NEW_PATH=""
-        IFS=':'
-        for path_entry in $PATH; do
-            # Convert to absolute path for comparison
-            if [ -d "$path_entry" ]; then
-                abs_path=$(cd "$path_entry" 2>/dev/null && pwd)
-                if [ "$abs_path" != "$SCRIPT_DIR" ]; then
-                    if [ -z "$NEW_PATH" ]; then
-                        NEW_PATH="$path_entry"
-                    else
-                        NEW_PATH="$NEW_PATH:$path_entry"
-                    fi
-                fi
-            fi
-        done
-        unset IFS
-        
-        # Temporarily use the new PATH to find system clang
-        PATH="$NEW_PATH"
-        SYSTEM_CLANG=$(command -v clang 2>/dev/null)
-        PATH="$ORIGINAL_PATH"
-    fi
-    
-    if [ -n "$SYSTEM_CLANG" ] && [ -x "$SYSTEM_CLANG" ]; then
-        exec "$SYSTEM_CLANG" "$@"
-    else
-        echo "Error: Could not find system clang for native macOS compilation"
-        echo "Searched locations: /usr/bin/clang, /usr/local/bin/clang, /opt/homebrew/bin/clang"
-        echo "Script directory: $SCRIPT_DIR"
-        exit 1
-    fi
+    # For native macOS builds, only remove zig-unsupported flags but keep essential libraries and frameworks
+    # Handle macOS-specific flags that zig doesn't support
+    args="${args//-ld_classic /}"
     
 else
-    # Check if zig is available for Linux compilation
-    if ! command -v zig &> /dev/null; then
-        echo "Error: zig is not on the PATH. Install zig and make sure it's on PATH. Follow instructions at https://github.com/MichalStrehovsky/PublishAotCross."
-        exit 1
-    fi
-    
     # Linux-specific argument handling (existing logic)
     
     # Works around zlib not being available with zig. This is not great.
@@ -127,12 +76,5 @@ else
     args="-Wl,-u,__Module $args"
 fi
 
-# Run zig cc (only for cross-compilation scenarios and Linux targets)
-if [ "$is_macos_target" = true ] && [ "$is_macos_host" = true ]; then
-    # Native macOS compilation was already handled with exec above
-    echo "Error: Native macOS compilation should have been handled above"
-    exit 1
-else
-    # Use zig cc for cross-compilation or Linux targets
-    zig cc $args
-fi
+# Use zig cc for all scenarios
+zig cc $args
