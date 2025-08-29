@@ -14,6 +14,8 @@ This repository includes a comprehensive GitHub Actions workflow (`cross-platfor
 - `linux-arm64`
 - `linux-musl-x64`
 - `linux-musl-arm64`
+- `osx-x64`
+- `osx-arm64`
 
 ## Workflow Structure
 
@@ -26,13 +28,13 @@ strategy:
     include:
       - host: windows-latest
         host-name: windows
-        targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64"
+        targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
       - host: macos-13
         host-name: macos-x64
-        targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64"
+        targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
       - host: macos-latest
         host-name: macos-arm64
-        targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64"
+        targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
 ```
 
 ### 2. Build Process
@@ -46,6 +48,7 @@ For each host-target combination:
 ### 3. Runtime Validation
 - Downloads build artifacts from all host platforms
 - Tests x64 binaries on Ubuntu (can't test ARM64 on x64 runners)
+- Tests macOS binaries on appropriate macOS runners (x64 on macos-13, ARM64 on macos-latest)
 - Verifies "Hello World" output
 - Reports success/failure rates
 
@@ -66,14 +69,15 @@ The workflow can be triggered by:
 ## Expected Results
 
 The workflow validates that PublishAotCross successfully enables:
-- Cross-compilation from Windows/macOS to Linux
-- Support for both glibc and musl targets
+- Cross-compilation from Windows/macOS to Linux and macOS
+- Support for both glibc and musl targets on Linux
 - Support for both x64 and ARM64 architectures
 - Functional binaries that run correctly on target platforms
 
 ## Limitations
 
 - ARM64 binaries cannot be runtime-tested on x64 GitHub runners
+- Cross-architecture testing (e.g., ARM64 binaries on x64 runners) is not supported
 - Network connectivity required for downloading Zig toolchain
 - Build time varies significantly based on platform and target
 
