@@ -124,6 +124,7 @@ jobs:
   # Validation: Test running the built binaries where possible
   validate:
     needs: build
+    if: always() # Run even if some builds failed
     strategy:
       fail-fast: false
       matrix:

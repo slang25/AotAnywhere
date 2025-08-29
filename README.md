@@ -66,3 +66,9 @@ If you don't want to use Zig from the Vezel.Zig.Toolsets NuGet package, you can 
 
 
 Even though Zig allows crosscompiling for Windows as well, it's not possible to crosscompile PublishAot like this due to ABI differences (MSVC vs. MingW ABI).
+
+## Cross-Platform Validation
+
+This repository includes a comprehensive GitHub Actions workflow that validates cross-compilation support across different host and target platforms. The workflow tests building from Windows and macOS hosts to all supported Linux targets (x64, ARM64, glibc, musl) and validates that the produced binaries run correctly.
+
+See [docs/cross-platform-validation.md](docs/cross-platform-validation.md) for detailed information about the validation process and platform support matrix.
