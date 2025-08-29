@@ -57,6 +57,11 @@
       <ZigPath Condition="$(HostRuntimeIdentifier.EndsWith('-arm64'))">$(PkgVezel_Zig_Toolsets_osx-arm64)/tools</ZigPath>
     </PropertyGroup>
 
+    <PropertyGroup Condition="$(HostRuntimeIdentifier.StartsWith('linux-'))">
+      <ZigPath Condition="$(HostRuntimeIdentifier.EndsWith('-x64'))">$(PkgVezel_Zig_Toolsets_linux-x64)/tools</ZigPath>
+      <ZigPath Condition="$(HostRuntimeIdentifier.EndsWith('-arm64'))">$(PkgVezel_Zig_Toolsets_linux-arm64)/tools</ZigPath>
+    </PropertyGroup>
+
     <PrependPath Condition="'$(UseExternalZig)' == 'false'" Value="$(ZigPath)" />
 
   </Target>
@@ -77,7 +82,7 @@
       <TargetTriple />
       <TargetTriple Condition="'$(CrossCompileArch)' != '' and $(CrossCompileRid.StartsWith('linux'))">$(CrossCompileArch)-linux-gnu</TargetTriple>
       <TargetTriple Condition="'$(CrossCompileArch)' != '' and ($(CrossCompileRid.StartsWith('linux-musl')) or $(CrossCompileRid.StartsWith('alpine')))">$(CrossCompileArch)-linux-musl</TargetTriple>
-      <TargetTriple Condition="'$(CrossCompileArch)' != '' and $(CrossCompileRid.StartsWith('osx'))">$(CrossCompileArch)-apple-darwin</TargetTriple>
+      <TargetTriple Condition="'$(CrossCompileArch)' != '' and $(CrossCompileRid.StartsWith('osx'))">$(CrossCompileArch)-macos</TargetTriple>
     </PropertyGroup>
 
     <ItemGroup>

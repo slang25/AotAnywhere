@@ -17,8 +17,17 @@ if not errorlevel 1 (
     rem Handle macOS-specific flags that zig doesn't support
     set args=%args:-ld_classic =%
     
-    rem Keep essential macOS frameworks and libraries
-    rem Don't remove these: -framework, -lobjc, -lswiftCore, etc.
+    rem Remove problematic libraries that may not be available during cross-compilation
+    set args=%args:-lswiftCore =%
+    set args=%args:-lswiftFoundation =%
+    set args=%args:-licucore =%
+    set args=%args:-L/usr/lib/swift =%
+    set args=%args:-lobjc =%
+    set args=%args:-lz =%
+    
+    rem Remove frameworks that may cause issues in cross-compilation
+    set args=%args:-framework CryptoKit =%
+    set args=%args:-framework GSS =%
     
 ) else (
     rem Linux-specific argument handling (existing logic)

@@ -18,12 +18,27 @@ fi
 if [ "$is_macos_target" = true ]; then
     # macOS-specific argument handling
     echo "Detected macOS target, applying macOS-specific fixes..."
+    echo "Original args: $args"
     
     # Handle macOS-specific flags that zig doesn't support
     args="${args//-ld_classic /}"
     
-    # Keep essential macOS frameworks and libraries
-    # Don't remove these: -framework, -lobjc, -lswiftCore, etc.
+    # Remove problematic libraries that may not be available during cross-compilation
+    args="${args//-lswiftCore /}"
+    args="${args//-lswiftFoundation /}"
+    args="${args//-licucore /}"
+    args="${args//-L\/usr\/lib\/swift /}"
+    args="${args//-lobjc /}"
+    args="${args//-lz /}"
+    
+    # Remove frameworks that may cause issues in cross-compilation
+    args="${args//-framework CryptoKit /}"
+    args="${args//-framework GSS /}"
+    args="${args//-framework CoreFoundation /}"
+    args="${args//-framework Foundation /}"
+    args="${args//-framework Security /}"
+    
+    echo "Modified args: $args"
     
 else
     # Linux-specific argument handling (existing logic)
