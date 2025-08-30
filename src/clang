@@ -27,12 +27,6 @@ if [ "$is_macos_target" = true ] && [ "$is_macos_host" = false ]; then
     is_cross_compiling_to_macos=true
 fi
 
-# DEBUG: Show detection results
-echo "DEBUG: macOS target detected: $is_macos_target"
-echo "DEBUG: macOS host detected: $is_macos_host"
-echo "DEBUG: Cross-compiling to macOS: $is_cross_compiling_to_macos"
-echo "DEBUG: OSTYPE: $OSTYPE"
-
 if [ "$is_cross_compiling_to_macos" = true ]; then
     # macOS cross-compilation argument handling
     echo "Cross-compiling to macOS target using PublishAotCross..."
@@ -80,10 +74,9 @@ elif [ "$is_macos_target" = true ]; then
             extra_args="$extra_args -L$sdk_path/usr/lib/swift"
             extra_args="$extra_args -L/usr/lib"
             extra_args="$extra_args -L/usr/lib/swift"
-            # Add framework search paths
+            # Add framework search paths for zig cc to find macOS frameworks
             extra_args="$extra_args -F$sdk_path/System/Library/Frameworks"
             extra_args="$extra_args -F/System/Library/Frameworks"
-            echo "DEBUG: Added framework search paths: -F$sdk_path/System/Library/Frameworks -F/System/Library/Frameworks"
         else
             echo "Warning: Could not determine macOS SDK path, using fallback library and framework paths"
             extra_args="-L/usr/lib -L/usr/lib/swift -F/System/Library/Frameworks"
@@ -115,6 +108,4 @@ else
 fi
 
 # Use zig cc for all scenarios
-echo "DEBUG: Final arguments passed to zig cc:"
-echo "DEBUG: zig cc $args"
 zig cc $args
