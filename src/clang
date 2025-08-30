@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Check if zig is available - needed for all scenarios now
+if ! command -v zig &> /dev/null; then
+    echo "Error: zig is not on the PATH. Install zig and make sure it's on PATH. Follow instructions at https://github.com/MichalStrehovsky/PublishAotCross."
+    exit 1
+fi
+
 # Get all arguments
 args="$@"
 
@@ -19,14 +25,6 @@ fi
 is_cross_compiling_to_macos=false
 if [ "$is_macos_target" = true ] && [ "$is_macos_host" = false ]; then
     is_cross_compiling_to_macos=true
-fi
-
-# Check if zig is available - only needed for cross-compilation and Linux builds
-if [ "$is_cross_compiling_to_macos" = true ] || [ "$is_macos_target" = false ]; then
-    if ! command -v zig &> /dev/null; then
-        echo "Error: zig is not on the PATH. Install zig and make sure it's on PATH. Follow instructions at https://github.com/MichalStrehovsky/PublishAotCross."
-        exit 1
-    fi
 fi
 
 if [ "$is_cross_compiling_to_macos" = true ]; then
@@ -52,39 +50,15 @@ if [ "$is_cross_compiling_to_macos" = true ]; then
     args="${args//-framework Security /}"
     
 elif [ "$is_macos_target" = true ]; then
-    # Native macOS compilation - use system clang to avoid zig library path issues
-    echo "Native macOS compilation, using system clang..."
+    # Native macOS compilation using zig cc with proper library paths
+    echo "Native macOS compilation using zig cc..."
     
-    # Find system clang by checking known locations first
-    SYSTEM_CLANG=""
+    # Remove zig-unsupported flags but keep essential libraries and frameworks
+    args="${args//-ld_classic /}"
     
-    # Check common system locations where clang is typically installed
-    for clang_path in /usr/bin/clang /usr/local/bin/clang /opt/homebrew/bin/clang /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang; do
-        if [ -x "$clang_path" ]; then
-            SYSTEM_CLANG="$clang_path"
-            break
-        fi
-    done
-    
-    # If still not found, try to find it via which, but make sure it's not our script
-    if [ -z "$SYSTEM_CLANG" ]; then
-        SCRIPT_PATH="$(realpath "$0" 2>/dev/null || readlink -f "$0" 2>/dev/null || echo "$0")"
-        potential_clang=$(which clang 2>/dev/null)
-        if [ -n "$potential_clang" ]; then
-            potential_real_path="$(realpath "$potential_clang" 2>/dev/null || readlink -f "$potential_clang" 2>/dev/null || echo "$potential_clang")"
-            if [ "$potential_real_path" != "$SCRIPT_PATH" ] && [ -x "$potential_clang" ]; then
-                SYSTEM_CLANG="$potential_clang"
-            fi
-        fi
-    fi
-    
-    if [ -n "$SYSTEM_CLANG" ]; then
-        exec "$SYSTEM_CLANG" "$@"
-    else
-        echo "Error: Could not find system clang for native macOS compilation"
-        echo "Searched locations: /usr/bin/clang, /usr/local/bin/clang, /opt/homebrew/bin/clang, Xcode toolchain"
-        exit 1
-    fi
+    # Add library search paths to help zig find macOS system libraries
+    extra_args="-L/usr/lib -L/usr/lib/swift -L/System/Library/Frameworks"
+    args="$extra_args $args"
     
 else
     # Linux-specific argument handling (existing logic)
@@ -105,7 +79,5 @@ else
     args="-Wl,-u,__Module $args"
 fi
 
-# Use zig cc for cross-compilation and Linux builds
-if [ "$is_cross_compiling_to_macos" = true ] || [ "$is_macos_target" = false ]; then
-    zig cc $args
-fi
+# Use zig cc for all scenarios
+zig cc $args
