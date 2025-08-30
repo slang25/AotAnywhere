@@ -30,16 +30,12 @@ fi
 if [ "$is_cross_compiling_to_macos" = true ]; then
     # macOS cross-compilation argument handling
     echo "Cross-compiling to macOS target using PublishAotCross..."
-    echo "DEBUG: Original args: $args"
     
     # Handle macOS-specific flags that zig doesn't support - comprehensive removal
     args=" $args "
     args="${args// -ld_classic / }"
     
-    echo "DEBUG: After removing -ld_classic: $args"
-    
     # Remove problematic libraries that may not be available during cross-compilation - comprehensive removal
-    args=" $args "
     args="${args// -lswiftCore / }"
     args="${args// -lswiftFoundation / }"
     args="${args// -licucore / }"
@@ -49,10 +45,7 @@ if [ "$is_cross_compiling_to_macos" = true ]; then
     args="${args// -ldl / }"
     args="${args// -lm / }"
     
-    echo "DEBUG: After removing libraries: $args"
-    
     # Remove frameworks that may cause issues in cross-compilation - comprehensive removal
-    args=" $args "
     args="${args// -framework CryptoKit / }"
     args="${args// -framework GSS / }"
     args="${args// -framework CoreFoundation / }"
@@ -62,8 +55,6 @@ if [ "$is_cross_compiling_to_macos" = true ]; then
     # Clean up extra spaces and trim
     args="${args//  / }"
     args=$(echo "$args" | sed 's/^ *//;s/ *$//')
-    
-    echo "DEBUG: After removing frameworks: $args"
     
     # Note: Cross-compilation to macOS has inherent limitations
     # Applications using Objective-C/Swift runtime may fail at link time
@@ -139,5 +130,4 @@ else
 fi
 
 # Use zig cc for all scenarios
-echo "DEBUG: Final command: zig cc $args"
 zig cc $args
