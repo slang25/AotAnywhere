@@ -65,31 +65,8 @@ if not errorlevel 1 (
     rem Work around parameters unsupported by zig. Just drop them from the command line.
     set "args=%args:--discard-all=--as-needed%"
     
-    rem Remove -Wl,-pie flags comprehensively
-    rem Multiple passes to handle all positions and combinations
-    set "args=%args: -Wl,-pie = %"
-    set "args=%args: -Wl,-pie =%"
-    set "args=%args:-Wl,-pie =%"
-    set "args=%args: -Wl,-pie=%"
-    set "args=%args:-Wl,-pie=%"
-    rem Check for -Wl,-pie at beginning and end
-    if "%args:~0,8%"=="-Wl,-pie" set "args=%args:~8%"
-    if "%args:~0,9%"=="-Wl,-pie " set "args=%args:~9%"
-    if "%args:~-8%"=="-Wl,-pie" set "args=%args:~0,-8%"
-    if "%args:~-9%"==" -Wl,-pie" set "args=%args:~0,-9%"
-    
-    rem Remove -pie flags comprehensively  
-    rem Multiple passes to handle all positions and combinations
-    set "args=%args: -pie = %"
-    set "args=%args: -pie =%"
-    set "args=%args:-pie =%"
-    set "args=%args: -pie=%"
-    set "args=%args:-pie=%"
-    rem Check for -pie at beginning and end
-    if "%args:~0,4%"=="-pie" set "args=%args:~4%"
-    if "%args:~0,5%"=="-pie " set "args=%args:~5%"
-    if "%args:~-4%"=="-pie" set "args=%args:~0,-4%"
-    if "%args:~-5%"==" -pie" set "args=%args:~0,-5%"
+    rem Remove -pie and -Wl,-pie flags precisely using iterative approach
+    call :filter_pie_flags args
     
     rem Remove other unsupported flags
     set "args=%args: -Wl,-e0x0 =%"
@@ -103,3 +80,29 @@ if not errorlevel 1 (
 
 rem Run zig cc
 zig cc %args%
+exit /B %ERRORLEVEL%
+
+:filter_pie_flags
+rem Helper function to filter out -pie and -Wl,-pie flags precisely
+rem Usage: call :filter_pie_flags variable_name
+setlocal enabledelayedexpansion
+set "var_name=%~1"
+call set "input_args=%%%~1%%"
+set "output_args="
+
+rem Split args and filter
+for %%a in (%input_args%) do (
+    set "current_arg=%%a"
+    if not "!current_arg!"=="-pie" (
+        if not "!current_arg!"=="-Wl,-pie" (
+            if defined output_args (
+                set "output_args=!output_args! !current_arg!"
+            ) else (
+                set "output_args=!current_arg!"
+            )
+        )
+    )
+)
+
+endlocal & set "%var_name%=%output_args%"
+goto :EOF
