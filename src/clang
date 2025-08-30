@@ -11,7 +11,7 @@ args="$@"
 
 # Detect if this is a macOS target by looking for macOS-specific flags or target
 is_macos_target=false
-if [[ "$args" == *"-apple-darwin"* ]] || [[ "$args" == *"-framework"* ]] || [[ "$args" == *"-exported_symbols_list"* ]]; then
+if [[ "$args" == *"-apple-darwin"* ]] || [[ "$args" == *"-framework"* ]] || [[ "$args" == *"-exported_symbols_list"* ]] || [[ "$args" == *"x86_64-macos"* ]] || [[ "$args" == *"aarch64-macos"* ]]; then
     is_macos_target=true
 fi
 
@@ -41,6 +41,8 @@ if [ "$is_cross_compiling_to_macos" = true ]; then
     args="${args//-L\/usr\/lib\/swift /}"
     args="${args//-lobjc /}"
     args="${args//-lz /}"
+    args="${args//-ldl /}"
+    args="${args//-lm /}"
     
     # Remove frameworks that may cause issues in cross-compilation
     args="${args//-framework CryptoKit /}"
@@ -49,16 +51,34 @@ if [ "$is_cross_compiling_to_macos" = true ]; then
     args="${args//-framework Foundation /}"
     args="${args//-framework Security /}"
     
+    # Note: Cross-compilation to macOS has inherent limitations
+    # Applications using Objective-C/Swift runtime may fail at link time
+    echo "Warning: Cross-compilation removes system libraries/frameworks that may be required at runtime"
+    
 elif [ "$is_macos_target" = true ]; then
-    # Native macOS compilation using zig cc with proper library paths
+    # Native macOS compilation using zig cc with proper SDK configuration
     echo "Native macOS compilation using zig cc..."
     
     # Remove zig-unsupported flags but keep essential libraries and frameworks
     args="${args//-ld_classic /}"
     
-    # Add library search paths to help zig find macOS system libraries
-    extra_args="-L/usr/lib -L/usr/lib/swift -L/System/Library/Frameworks"
-    args="$extra_args $args"
+    # Get macOS SDK path for zig cc to find system libraries
+    if command -v xcrun &> /dev/null; then
+        sdk_path=$(xcrun --show-sdk-path 2>/dev/null)
+        if [ -n "$sdk_path" ] && [ -d "$sdk_path" ]; then
+            echo "Using macOS SDK: $sdk_path"
+            extra_args="-isysroot $sdk_path"
+            args="$extra_args $args"
+        else
+            echo "Warning: Could not determine macOS SDK path, using fallback library paths"
+            extra_args="-L/usr/lib -L/usr/lib/swift -L/System/Library/Frameworks"
+            args="$extra_args $args"
+        fi
+    else
+        echo "Warning: xcrun not available, using fallback library paths"
+        extra_args="-L/usr/lib -L/usr/lib/swift -L/System/Library/Frameworks"
+        args="$extra_args $args"
+    fi
     
 else
     # Linux-specific argument handling (existing logic)

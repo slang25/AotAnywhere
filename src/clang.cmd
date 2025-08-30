@@ -24,6 +24,8 @@ if not errorlevel 1 (
     set args=%args:-L/usr/lib/swift =%
     set args=%args:-lobjc =%
     set args=%args:-lz =%
+    set args=%args:-ldl =%
+    set args=%args:-lm =%
     
     rem Remove frameworks that may cause issues in cross-compilation
     set args=%args:-framework CryptoKit =%
@@ -31,6 +33,9 @@ if not errorlevel 1 (
     set args=%args:-framework CoreFoundation =%
     set args=%args:-framework Foundation =%
     set args=%args:-framework Security =%
+    
+    rem Note: Cross-compilation to macOS has inherent limitations
+    echo Warning: Cross-compilation removes system libraries/frameworks that may be required at runtime
     
 ) else (
     rem Linux-specific argument handling (existing logic)
