@@ -1,6 +1,7 @@
 # Build outputs
 bin/
 obj/
+artifacts/
 
 # NuGet packages
 *.nupkg
