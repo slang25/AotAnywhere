@@ -27,6 +27,12 @@ if [ "$is_macos_target" = true ] && [ "$is_macos_host" = false ]; then
     is_cross_compiling_to_macos=true
 fi
 
+# DEBUG: Show detection results
+echo "DEBUG: macOS target detected: $is_macos_target"
+echo "DEBUG: macOS host detected: $is_macos_host"
+echo "DEBUG: Cross-compiling to macOS: $is_cross_compiling_to_macos"
+echo "DEBUG: OSTYPE: $OSTYPE"
+
 if [ "$is_cross_compiling_to_macos" = true ]; then
     # macOS cross-compilation argument handling
     echo "Cross-compiling to macOS target using PublishAotCross..."
@@ -62,26 +68,29 @@ elif [ "$is_macos_target" = true ]; then
     # Remove zig-unsupported flags but keep essential libraries and frameworks
     args="${args//-ld_classic /}"
     
-    # Get macOS SDK path for zig cc to find system libraries
+    # Get macOS SDK path for zig cc to find system libraries and frameworks
     extra_args=""
     if command -v xcrun &> /dev/null; then
         sdk_path=$(xcrun --show-sdk-path 2>/dev/null)
         if [ -n "$sdk_path" ] && [ -d "$sdk_path" ]; then
             echo "Using macOS SDK: $sdk_path"
-            # Use both -isysroot and explicit library search paths
+            # Use both -isysroot and explicit library/framework search paths
             extra_args="-isysroot $sdk_path"
             extra_args="$extra_args -L$sdk_path/usr/lib"
             extra_args="$extra_args -L$sdk_path/usr/lib/swift"
             extra_args="$extra_args -L/usr/lib"
             extra_args="$extra_args -L/usr/lib/swift"
-            extra_args="$extra_args -L/System/Library/Frameworks"
+            # Add framework search paths
+            extra_args="$extra_args -F$sdk_path/System/Library/Frameworks"
+            extra_args="$extra_args -F/System/Library/Frameworks"
+            echo "DEBUG: Added framework search paths: -F$sdk_path/System/Library/Frameworks -F/System/Library/Frameworks"
         else
-            echo "Warning: Could not determine macOS SDK path, using fallback library paths"
-            extra_args="-L/usr/lib -L/usr/lib/swift -L/System/Library/Frameworks"
+            echo "Warning: Could not determine macOS SDK path, using fallback library and framework paths"
+            extra_args="-L/usr/lib -L/usr/lib/swift -F/System/Library/Frameworks"
         fi
     else
-        echo "Warning: xcrun not available, using fallback library paths"
-        extra_args="-L/usr/lib -L/usr/lib/swift -L/System/Library/Frameworks"
+        echo "Warning: xcrun not available, using fallback library and framework paths"
+        extra_args="-L/usr/lib -L/usr/lib/swift -F/System/Library/Frameworks"
     fi
     
     args="$extra_args $args"
@@ -106,4 +115,6 @@ else
 fi
 
 # Use zig cc for all scenarios
+echo "DEBUG: Final arguments passed to zig cc:"
+echo "DEBUG: zig cc $args"
 zig cc $args
