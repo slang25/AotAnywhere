@@ -65,17 +65,31 @@ if not errorlevel 1 (
     rem Work around parameters unsupported by zig. Just drop them from the command line.
     set "args=%args:--discard-all=--as-needed%"
     
-    rem Remove -Wl,-pie flags first (longer patterns before shorter ones to avoid partial matches)
+    rem Remove -Wl,-pie flags comprehensively
+    rem Multiple passes to handle all positions and combinations
+    set "args=%args: -Wl,-pie = %"
     set "args=%args: -Wl,-pie =%"
     set "args=%args:-Wl,-pie =%"
     set "args=%args: -Wl,-pie=%"
     set "args=%args:-Wl,-pie=%"
+    rem Check for -Wl,-pie at beginning and end
+    if "%args:~0,8%"=="-Wl,-pie" set "args=%args:~8%"
+    if "%args:~0,9%"=="-Wl,-pie " set "args=%args:~9%"
+    if "%args:~-8%"=="-Wl,-pie" set "args=%args:~0,-8%"
+    if "%args:~-9%"==" -Wl,-pie" set "args=%args:~0,-9%"
     
-    rem Remove -pie flags (all possible positions)
+    rem Remove -pie flags comprehensively  
+    rem Multiple passes to handle all positions and combinations
+    set "args=%args: -pie = %"
     set "args=%args: -pie =%"
     set "args=%args:-pie =%"
     set "args=%args: -pie=%"
     set "args=%args:-pie=%"
+    rem Check for -pie at beginning and end
+    if "%args:~0,4%"=="-pie" set "args=%args:~4%"
+    if "%args:~0,5%"=="-pie " set "args=%args:~5%"
+    if "%args:~-4%"=="-pie" set "args=%args:~0,-4%"
+    if "%args:~-5%"==" -pie" set "args=%args:~0,-5%"
     
     rem Remove other unsupported flags
     set "args=%args: -Wl,-e0x0 =%"

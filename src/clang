@@ -105,17 +105,37 @@ else
     # Work around parameters unsupported by zig. Just drop them from the command line.
     args="${args//--discard-all/--as-needed}"
     
-    # Remove -Wl,-pie flags (all variations)
+    # Remove -Wl,-pie flags comprehensively (all variations)
     args="${args// -Wl,-pie / }"
     args="${args//-Wl,-pie /}"
     args="${args// -Wl,-pie/}"
     args="${args//-Wl,-pie/}"
+    # Handle -Wl,-pie at beginning and end
+    if [[ "$args" == "-Wl,-pie "* ]]; then
+        args="${args#-Wl,-pie }"
+    fi
+    if [[ "$args" == "-Wl,-pie" ]]; then
+        args=""
+    fi
+    if [[ "$args" == *" -Wl,-pie" ]]; then
+        args="${args% -Wl,-pie}"
+    fi
     
-    # Remove -pie flags (all variations)
+    # Remove -pie flags comprehensively (all variations)
     args="${args// -pie / }"
     args="${args//-pie /}"
     args="${args// -pie/}"
     args="${args//-pie/}"
+    # Handle -pie at beginning and end
+    if [[ "$args" == "-pie "* ]]; then
+        args="${args#-pie }"
+    fi
+    if [[ "$args" == "-pie" ]]; then
+        args=""
+    fi
+    if [[ "$args" == *" -pie" ]]; then
+        args="${args% -pie}"
+    fi
     
     # Remove other unsupported flags
     args="${args// -Wl,-e0x0 / }"
