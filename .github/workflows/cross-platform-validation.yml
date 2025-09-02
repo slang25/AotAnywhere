@@ -140,6 +140,7 @@ jobs:
       
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
+        if: always()  # Upload artifacts even if some builds failed
         with:
           name: binaries-${{ matrix.host-name }}
           path: artifacts/${{ matrix.host-name }}/

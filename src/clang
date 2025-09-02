@@ -35,30 +35,32 @@ if [ "$is_cross_compiling_to_macos" = true ]; then
     args=" $args "
     args="${args// -ld_classic / }"
     
-    # Remove problematic libraries that may not be available during cross-compilation - comprehensive removal
+    # Remove only problematic Swift libraries that are not available during cross-compilation
+    # Keep essential system libraries that .NET runtime depends on
+    args=" $args "
+    
+    # Remove Swift-specific libraries that are not available during cross-compilation
     args="${args// -lswiftCore / }"
     args="${args// -lswiftFoundation / }"
-    args="${args// -licucore / }"
     args="${args// -L\/usr\/lib\/swift / }"
-    args="${args// -lobjc / }"
-    args="${args// -lz / }"
-    args="${args// -ldl / }"
-    args="${args// -lm / }"
     
-    # Remove frameworks that may cause issues in cross-compilation - comprehensive removal
+    # Keep essential system libraries: -lobjc, -lz, -ldl, -lm, -licucore
+    # These are needed by the .NET runtime
+    
+    # Remove only problematic frameworks, keep essential ones
     args="${args// -framework CryptoKit / }"
     args="${args// -framework GSS / }"
-    args="${args// -framework CoreFoundation / }"
-    args="${args// -framework Foundation / }"
-    args="${args// -framework Security / }"
+    
+    # Keep essential frameworks: CoreFoundation, Foundation, Security
+    # These are required by the .NET runtime for macOS
     
     # Clean up extra spaces and trim
     args="${args//  / }"
     args=$(echo "$args" | sed 's/^ *//;s/ *$//')
     
-    # Note: Cross-compilation to macOS has inherent limitations
-    # Applications using Objective-C/Swift runtime may fail at link time
-    echo "Warning: Cross-compilation removes system libraries/frameworks that may be required at runtime"
+    # Note: Cross-compilation keeps essential frameworks and system libraries
+    # Applications using advanced Swift features may still have limitations
+    echo "Warning: Cross-compilation may have limitations with some advanced macOS features"
     
 elif [ "$is_macos_target" = true ]; then
     # Native macOS compilation using zig cc with proper SDK configuration

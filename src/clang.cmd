@@ -21,34 +21,34 @@ if not errorlevel 1 (
     set "args=!args: -ld_classic = !"
     call :trim_args args
     
-    rem Remove problematic libraries that may not be available during cross-compilation
-    rem Use the same comprehensive space-based approach for all removals
+    rem Remove only problematic Swift libraries that are not available during cross-compilation
+    rem Keep essential system libraries that .NET runtime depends on
     set "args= !args! "
     
+    rem Remove Swift-specific libraries that are not available during cross-compilation
     set "args=!args: -lswiftCore = !"
     set "args=!args: -lswiftFoundation = !"
-    set "args=!args: -licucore = !"
     set "args=!args: -L/usr/lib/swift = !"
-    set "args=!args: -lobjc = !"
-    set "args=!args: -lz = !"
-    set "args=!args: -ldl = !"
-    set "args=!args: -lm = !"
+    
+    rem Keep essential system libraries: -lobjc, -lz, -ldl, -lm, -licucore
+    rem These are needed by the .NET runtime
     
     call :trim_args args
     
-    rem Remove frameworks that may cause issues in cross-compilation
+    rem Remove only problematic frameworks, keep essential ones
     set "args= !args! "
     
+    rem Remove Swift-specific frameworks
     set "args=!args: -framework CryptoKit = !"
     set "args=!args: -framework GSS = !"
-    set "args=!args: -framework CoreFoundation = !"
-    set "args=!args: -framework Foundation = !"
-    set "args=!args: -framework Security = !"
+    
+    rem Keep essential frameworks: CoreFoundation, Foundation, Security
+    rem These are required by the .NET runtime for macOS
     
     call :trim_args args
     
-    rem Note: Cross-compilation to macOS has inherent limitations
-    echo Warning: Cross-compilation removes system libraries/frameworks that may be required at runtime
+    rem Note: Cross-compilation keeps essential frameworks and system libraries
+    echo Warning: Cross-compilation may have limitations with some advanced macOS features
     
 ) else (
     rem Linux-specific argument handling (existing logic)
