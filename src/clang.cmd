@@ -41,13 +41,10 @@ if not errorlevel 1 (
     set "args=!args: -lswiftCore = !"
     set "args=!args: -lswiftFoundation = !"
     
-    rem Remove system libraries and frameworks. Zig provides its own for the target.
+    rem Remove problematic paths that don't exist on host system
     set "args=!args: -L/usr/lib/swift = !"
-    set "args=!args: -framework CoreFoundation = !"
-    set "args=!args: -framework Foundation = !"
-    set "args=!args: -framework Security = !"
-    set "args=!args: -framework CryptoKit = !"
-    set "args=!args: -framework GSS = !"
+    
+    rem Keep framework arguments - zig cc should handle them for cross-compilation
 
 ) else (
     rem --- Linux Cross-Compilation Target ---
