@@ -35,10 +35,18 @@ if not errorlevel 1 (
     rem Remove host-specific library search path. Zig finds these automatically.
     set "args=!args: -L/usr/lib/swift = !"
 
-    rem Add -mmacosx-version-min to tell Zig which of its bundled SDKs
-    rem to activate. This is critical for the linker to find system libraries
-    rem like 'objc' and frameworks like 'CoreFoundation'.
-    set "args=!args! -mmacosx-version-min=11.0"
+    rem Take full control of the target specification to avoid parsing issues.
+    rem First, remove the incoming target flag from the build system.
+    set "args=!args: --target=x86_64-macos = !"
+    set "args=!args: --target=aarch64-macos = !"
+
+    rem Now, append our own canonical target flags at the end. This forces Zig
+    rem to activate its internal SDK.
+    if " !args! "==" !args:x86_64-macos=! " (
+        set "args=!args! --target aarch64-macos -mmacosx-version-min=11.0"
+    ) else (
+        set "args=!args! --target x86_64-macos -mmacosx-version-min=11.0"
+    )
 
 ) else (
     rem --- Linux Cross-Compilation Target ---
