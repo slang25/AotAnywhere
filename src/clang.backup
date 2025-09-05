@@ -82,17 +82,9 @@ process_macos_cross_compile_args() {
         -ld_classic | -lobjc | -lz | -ldl | -lm | -licucore | -lswiftCore | -lswiftFoundation)
             shift
             ;;
-        # Library path to remove (no argument)
-        -L/usr/lib/swift)
-            shift
-            ;;
-        # Framework flag that takes an argument
-        -framework)
-            if [[ $# -ge 2 ]]; then
-                shift 2
-            else
-                shift
-            fi
+        # Flags that consume the next argument
+        -L/usr/lib/swift | -framework)
+            shift 2
             ;;
         *)
             filtered_args+=("$1")
