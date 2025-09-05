@@ -1,138 +1,167 @@
 #!/bin/bash
+#
+# clang - Wrapper to redirect clang calls to 'zig cc'.
+# This script intelligently modifies arguments for native and cross-compilation.
 
-# Check if zig is available - needed for all scenarios now
-if ! command -v zig &> /dev/null; then
-    echo "Error: zig is not on the PATH. Install zig and make sure it's on PATH. Follow instructions at https://github.com/MichalStrehovsky/PublishAotCross."
-    exit 1
-fi
+set -euo pipefail
 
-# Get all arguments
-args="$@"
+# --- Main Logic ---
+main() {
+    # Use a bash array to preserve arguments with spaces. This is critical.
+    local -a args=("$@")
 
-# Detect if this is a macOS target by looking for macOS-specific flags or target
-is_macos_target=false
-if [[ "$args" == *"-apple-darwin"* ]] || [[ "$args" == *"-framework"* ]] || [[ "$args" == *"-exported_symbols_list"* ]] || [[ "$args" == *"x86_64-macos"* ]] || [[ "$args" == *"aarch64-macos"* ]]; then
-    is_macos_target=true
-fi
+    # --- Optional Debug Logging ---
+    if [[ -n "${ZIG_SHIM_DEBUG:-}" ]]; then
+        echo "[DEBUG] Original args:"
+        printf "  '%s'\n" "${args[@]}"
+    fi
 
-# Detect if we're running on macOS (native compilation)
-is_macos_host=false
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    is_macos_host=true
-fi
+    # --- Dependency Check ---
+    if ! command -v zig &>/dev/null; then
+        echo "Error: zig is not on the PATH." >&2
+        exit 1
+    fi
 
-# Only apply cross-compilation fixes when targeting macOS from a non-macOS host
-is_cross_compiling_to_macos=false
-if [ "$is_macos_target" = true ] && [ "$is_macos_host" = false ]; then
-    is_cross_compiling_to_macos=true
-fi
+    # --- Target and Host Detection ---
+    local is_macos_target=false
+    local is_macos_host=false
 
-if [ "$is_cross_compiling_to_macos" = true ]; then
-    # macOS cross-compilation argument handling
-    echo "Cross-compiling to macOS target using PublishAotCross..."
-    
-    # Handle macOS-specific flags that zig doesn't support - comprehensive removal
-    args=" $args "
-    args="${args// -ld_classic / }"
-    
-    # For cross-compilation from non-macOS to macOS, remove ALL system libraries and frameworks
-    # Zig will handle linking to its built-in macOS system libraries automatically
-    args=" $args "
-    
-    # Remove ALL system libraries during cross-compilation
-    args="${args// -lobjc / }"
-    args="${args// -lz / }"
-    args="${args// -ldl / }"
-    args="${args// -lm / }"
-    args="${args// -licucore / }"
-    args="${args// -lswiftCore / }"
-    args="${args// -lswiftFoundation / }"
-    args="${args// -L\/usr\/lib\/swift / }"
-    
-    # Remove ALL frameworks during cross-compilation
-    args="${args// -framework CoreFoundation / }"
-    args="${args// -framework Foundation / }"
-    args="${args// -framework Security / }"
-    args="${args// -framework CryptoKit / }"
-    args="${args// -framework GSS / }"
-    
-    # Clean up extra spaces and trim
-    args="${args//  / }"
-    args=$(echo "$args" | sed 's/^ *//;s/ *$//')
-    
-    # Note: Cross-compilation removes all system libraries and frameworks
-    # Zig will link to its built-in macOS system libraries automatically
-    echo "Warning: Cross-compilation removes all system libraries/frameworks - zig handles linking automatically"
-    
-elif [ "$is_macos_target" = true ]; then
-    # Native macOS compilation using zig cc with proper SDK configuration
-    echo "Native macOS compilation using zig cc..."
-    
-    # Remove zig-unsupported flags but keep essential libraries and frameworks
-    args="${args//-ld_classic /}"
-    
-    # Get macOS SDK path for zig cc to find system libraries and frameworks
-    extra_args=""
-    if command -v xcrun &> /dev/null; then
-        sdk_path=$(xcrun --show-sdk-path 2>/dev/null)
-        if [ -n "$sdk_path" ] && [ -d "$sdk_path" ]; then
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        is_macos_host=true
+    fi
+
+    # Loop through args to detect target. More robust than string matching.
+    for arg in "${args[@]}"; do
+        case "$arg" in
+        *-apple-darwin* | -framework | *-macos*)
+            is_macos_target=true
+            break
+            ;;
+        esac
+    done
+
+    # --- Argument Processing ---
+    local -a filtered_args=()
+    if [[ "$is_macos_target" == true && "$is_macos_host" == false ]]; then
+        # --- Case 1: Cross-compiling to macOS (e.g., from Linux) ---
+        echo "[clang.sh] Detected macOS cross-compilation target."
+        process_macos_cross_compile_args "${args[@]}"
+    elif [[ "$is_macos_target" == true ]]; then
+        # --- Case 2: Native compilation on macOS ---
+        echo "[clang.sh] Detected native macOS compilation."
+        process_macos_native_args "${args[@]}"
+    else
+        # --- Case 3: Compiling for Linux ---
+        echo "[clang.sh] Detected Linux compilation target."
+        process_linux_args "${args[@]}"
+    fi
+
+    # The processing functions will populate the 'filtered_args' array.
+
+    # --- Optional Debug Logging ---
+    if [[ -n "${ZIG_SHIM_DEBUG:-}" ]]; then
+        echo "[DEBUG] Final command:"
+        printf "  'zig' 'cc' "
+        printf "'%s' " "${filtered_args[@]}"
+        echo
+    fi
+
+    # --- Execution ---
+    # The "${filtered_args[@]}" syntax correctly handles args with spaces.
+    zig cc "${filtered_args[@]}"
+}
+
+# --- Argument Processing Functions ---
+
+process_macos_cross_compile_args() {
+    echo "Warning: Removing system libs/frameworks for cross-compilation."
+    local -a input_args=("$@")
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        # Flags to remove completely
+        -ld_classic | -lobjc | -lz | -ldl | -lm | -licucore | -lswiftCore | -lswiftFoundation)
+            shift
+            ;;
+        # Flags that consume the next argument
+        -L/usr/lib/swift | -framework)
+            shift 2
+            ;;
+        *)
+            filtered_args+=("$1")
+            shift
+            ;;
+        esac
+    done
+}
+
+process_macos_native_args() {
+    local -a extra_args=()
+    if command -v xcrun &>/dev/null; then
+        local sdk_path
+        sdk_path=$(xcrun --show-sdk-path 2>/dev/null || true)
+        if [[ -n "$sdk_path" && -d "$sdk_path" ]]; then
             echo "Using macOS SDK: $sdk_path"
-            # Use both -isysroot and explicit library/framework search paths
-            extra_args="-isysroot $sdk_path"
-            extra_args="$extra_args -L$sdk_path/usr/lib"
-            extra_args="$extra_args -L$sdk_path/usr/lib/swift"
-            extra_args="$extra_args -L/usr/lib"
-            extra_args="$extra_args -L/usr/lib/swift"
-            # Add framework search paths for zig cc to find macOS frameworks
-            extra_args="$extra_args -F$sdk_path/System/Library/Frameworks"
-            extra_args="$extra_args -F/System/Library/Frameworks"
+            extra_args+=("-isysroot" "$sdk_path")
+            extra_args+=("-L$sdk_path/usr/lib")
+            extra_args+=("-L$sdk_path/usr/lib/swift")
+            extra_args+=("-F$sdk_path/System/Library/Frameworks")
         else
-            echo "Warning: Could not determine macOS SDK path, using fallback library and framework paths"
-            extra_args="-L/usr/lib -L/usr/lib/swift -F/System/Library/Frameworks"
+            echo "Warning: Could not determine macOS SDK path. Using fallbacks." >&2
+            extra_args+=("-L/usr/lib")
+            extra_args+=("-L/usr/lib/swift")
+            extra_args+=("-F/System/Library/Frameworks")
         fi
     else
-        echo "Warning: xcrun not available, using fallback library and framework paths"
-        extra_args="-L/usr/lib -L/usr/lib/swift -F/System/Library/Frameworks"
+        echo "Warning: xcrun not available. Using fallbacks." >&2
+        extra_args+=("-L/usr/lib")
+        extra_args+=("-L/usr/lib/swift")
+        extra_args+=("-F/System/Library/Frameworks")
     fi
-    
-    args="$extra_args $args"
-    
-else
-    # Linux-specific argument handling (existing logic)
-    echo "Cross-compiling to Linux target using PublishAotCross..."
-    
-    # Works around zlib not being available with zig. This is not great.
-    args="${args//-lz /}"
 
-    # Work around a .NET 8 Preview 6 issue
-    args="${args//\'-Wl,-rpath,\$ORIGIN\'/-Wl,-rpath,\$ORIGIN}"
-
-    # Work around parameters unsupported by zig. Just drop them from the command line.
-    args="${args//--discard-all/--as-needed}"
-    
-    # Convert args to array for precise flag removal
-    read -ra arg_array <<< "$args"
-    filtered_args=()
-    
-    for arg in "${arg_array[@]}"; do
-        # Skip exact matches for problematic flags
-        if [[ "$arg" != "-pie" && "$arg" != "-Wl,-pie" ]]; then
-            filtered_args+=("$arg")
-        fi
+    # Prepend SDK flags and then filter the rest of the arguments.
+    filtered_args+=("${extra_args[@]}")
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        -ld_classic) # Remove unsupported flag
+            shift
+            ;;
+        *)
+            filtered_args+=("$1")
+            shift
+            ;;
+        esac
     done
-    
-    # Reconstruct args string
-    args="${filtered_args[*]}"
-    
-    # Remove other unsupported flags
-    args="${args// -Wl,-e0x0 / }"
-    args="${args//-Wl,-e0x0 /}"
-    args="${args// -Wl,-e0x0/}"
-    args="${args//-Wl,-e0x0/}"
+}
 
-    # Works around zig linker dropping necessary parts of the executable.
-    args="-Wl,-u,__Module $args"
-fi
+process_linux_args() {
+    # Prepend required linker flag
+    filtered_args+=("-Wl,-u,__Module")
 
-# Use zig cc for all scenarios
-zig cc $args
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        # Flags to remove completely
+        -lz | -pie | -Wl,-pie | -Wl,-e0x0)
+            shift
+            ;;
+        # Flags to replace
+        --discard-all)
+            filtered_args+=("--as-needed")
+            shift
+            ;;
+        # .NET issue workaround (removes single quotes)
+        "'-Wl,-rpath,\$ORIGIN'")
+            # Use single quotes here to add the literal string to the array.
+            filtered_args+=('-Wl,-rpath,$ORIGIN')
+            shift
+            ;;
+        *)
+            filtered_args+=("$1")
+            shift
+            ;;
+        esac
+    done
+}
+
+# --- Script Entry Point ---
+# Pass all script arguments to the main function.
+main "$@"
