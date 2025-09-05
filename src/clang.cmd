@@ -29,23 +29,16 @@ if not errorlevel 1 (
     rem --- macOS Cross-Compilation Target ---
     echo [clang.cmd] Detected macOS cross-compilation target.
 
-    rem Remove macOS-specific flags that zig handles automatically or doesn't support.
+    rem Only remove flags that are truly incompatible with zig's cross-linker
+    rem or are host-specific paths. DO NOT remove the library/framework link
+    rem flags (-lobjc, -framework, etc.), as zig needs them to know which
+    rem system libraries to link for the target.
+
+    rem Remove macOS-specific linker option that zig doesn't support.
     set "args=!args: -ld_classic = !"
 
-    rem Remove system libraries and frameworks. Zig provides its own for the target.
-    set "args=!args: -lobjc = !"
-    set "args=!args: -lz = !"
-    set "args=!args: -ldl = !"
-    set "args=!args: -lm = !"
-    set "args=!args: -licucore = !"
-    set "args=!args: -lswiftCore = !"
-    set "args=!args: -lswiftFoundation = !"
+    rem Remove host-specific library search path. Zig finds these automatically.
     set "args=!args: -L/usr/lib/swift = !"
-    set "args=!args: -framework CoreFoundation = !"
-    set "args=!args: -framework Foundation = !"
-    set "args=!args: -framework Security = !"
-    set "args=!args: -framework CryptoKit = !"
-    set "args=!args: -framework GSS = !"
 
 ) else (
     rem --- Linux Cross-Compilation Target ---
@@ -84,6 +77,8 @@ exit /B !ERRORLEVEL!
 
 
 :trim_args
+rem Helper function to trim spaces from arguments and normalize spacing.
+rem Usage: call :trim_args variable_name
 setlocal enabledelayedexpansion
 set "var_name=%~1"
 call set "input_args=%%%~1%%"
