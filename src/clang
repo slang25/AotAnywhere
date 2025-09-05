@@ -103,15 +103,18 @@ process_macos_native_args() {
             echo "Using macOS SDK: $sdk_path"
             extra_args+=("-isysroot" "$sdk_path")
             extra_args+=("-L$sdk_path/usr/lib")
+            extra_args+=("-L$sdk_path/usr/lib/swift")
             extra_args+=("-F$sdk_path/System/Library/Frameworks")
         else
             echo "Warning: Could not determine macOS SDK path. Using fallbacks." >&2
             extra_args+=("-L/usr/lib")
+            extra_args+=("-L/usr/lib/swift")
             extra_args+=("-F/System/Library/Frameworks")
         fi
     else
         echo "Warning: xcrun not available. Using fallbacks." >&2
         extra_args+=("-L/usr/lib")
+        extra_args+=("-L/usr/lib/swift")
         extra_args+=("-F/System/Library/Frameworks")
     fi
 
