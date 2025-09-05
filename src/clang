@@ -74,7 +74,7 @@ main() {
 # --- Argument Processing Functions ---
 
 process_macos_cross_compile_args() {
-    echo "Warning: Removing system libs/frameworks for cross-compilation."
+    echo "Warning: Removing problematic system libs for cross-compilation."
     local -a input_args=("$@")
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -82,15 +82,17 @@ process_macos_cross_compile_args() {
         -ld_classic | -lobjc | -lz | -ldl | -lm | -licucore | -lswiftCore | -lswiftFoundation)
             shift
             ;;
-        # Library path to remove (no argument)
+        # Library path to remove (no argument) - this was causing argument parsing issues
         -L/usr/lib/swift)
             shift
             ;;
-        # Framework flag that takes an argument
+        # Keep framework flags - they are needed for linking
         -framework)
             if [[ $# -ge 2 ]]; then
+                filtered_args+=("$1" "$2")
                 shift 2
             else
+                filtered_args+=("$1")
                 shift
             fi
             ;;
