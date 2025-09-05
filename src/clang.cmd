@@ -29,16 +29,16 @@ if not errorlevel 1 (
     rem --- macOS Cross-Compilation Target ---
     echo [clang.cmd] Detected macOS cross-compilation target.
 
-    rem Only remove flags that are truly incompatible with zig's cross-linker
-    rem or are host-specific paths. DO NOT remove the library/framework link
-    rem flags (-lobjc, -framework, etc.), as zig needs them to know which
-    rem system libraries to link for the target.
-
     rem Remove macOS-specific linker option that zig doesn't support.
     set "args=!args: -ld_classic = !"
 
     rem Remove host-specific library search path. Zig finds these automatically.
     set "args=!args: -L/usr/lib/swift = !"
+
+    rem Add -mmacosx-version-min to tell Zig which of its bundled SDKs
+    rem to activate. This is critical for the linker to find system libraries
+    rem like 'objc' and frameworks like 'CoreFoundation'.
+    set "args=!args! -mmacosx-version-min=11.0"
 
 ) else (
     rem --- Linux Cross-Compilation Target ---
