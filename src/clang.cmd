@@ -47,6 +47,13 @@ if not errorlevel 1 (
     set "args=!args: -framework CryptoKit = !"
     set "args=!args: -framework GSS = !"
 
+    rem Remove any standalone framework names that might slip through due to spacing issues
+    set "args=!args: CoreFoundation = !"
+    set "args=!args: Foundation = !"
+    set "args=!args: Security = !"
+    set "args=!args: CryptoKit = !"
+    set "args=!args: GSS = !"
+
 ) else (
     rem --- Linux Cross-Compilation Target ---
     echo [clang.cmd] Detected Linux cross-compilation target.
