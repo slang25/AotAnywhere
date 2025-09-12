@@ -74,19 +74,18 @@ main() {
 # --- Argument Processing Functions ---
 
 process_macos_cross_compile_args() {
-    echo "Warning: Removing problematic host system paths for cross-compilation."
+    echo "Warning: Removing system libs/frameworks for cross-compilation."
     local -a input_args=("$@")
     while [[ $# -gt 0 ]]; do
         case "$1" in
-        # Flags to remove completely - libraries zig provides
+        # Flags to remove completely
         -ld_classic | -lobjc | -lz | -ldl | -lm | -licucore | -lswiftCore | -lswiftFoundation)
             shift
             ;;
-        # Library path to remove (doesn't exist on host system)
-        -L/usr/lib/swift)
-            shift
+        # Flags that consume the next argument
+        -L/usr/lib/swift | -framework)
+            shift 2
             ;;
-        # Keep framework arguments - zig cc should handle them for cross-compilation
         *)
             filtered_args+=("$1")
             shift

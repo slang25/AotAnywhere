@@ -32,7 +32,7 @@ if not errorlevel 1 (
     rem Remove macOS-specific flags that zig handles automatically or doesn't support.
     set "args=!args: -ld_classic = !"
 
-    rem Remove system libraries that zig provides automatically for the target.
+    rem Remove system libraries and frameworks. Zig provides its own for the target.
     set "args=!args: -lobjc = !"
     set "args=!args: -lz = !"
     set "args=!args: -ldl = !"
@@ -40,11 +40,12 @@ if not errorlevel 1 (
     set "args=!args: -licucore = !"
     set "args=!args: -lswiftCore = !"
     set "args=!args: -lswiftFoundation = !"
-    
-    rem Remove problematic paths that don't exist on host system
     set "args=!args: -L/usr/lib/swift = !"
-    
-    rem Keep framework arguments - zig cc should handle them for cross-compilation
+    set "args=!args: -framework CoreFoundation = !"
+    set "args=!args: -framework Foundation = !"
+    set "args=!args: -framework Security = !"
+    set "args=!args: -framework CryptoKit = !"
+    set "args=!args: -framework GSS = !"
 
 ) else (
     rem --- Linux Cross-Compilation Target ---
