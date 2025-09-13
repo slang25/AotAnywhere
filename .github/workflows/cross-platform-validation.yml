@@ -19,6 +19,11 @@ jobs:
             host-name: windows
             targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
           
+          # Linux host builds
+          - host: ubuntu-latest
+            host-name: linux
+            targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
+          
           # macOS x64 host builds  
           - host: macos-13
             host-name: macos-x64
@@ -162,17 +167,17 @@ jobs:
           - runner: ubuntu-latest
             runner-name: ubuntu-x64
             test-targets: "linux-x64,linux-musl-x64"
-            host-sources: "windows,macos-x64,macos-arm64"
+            host-sources: "windows,linux,macos-x64,macos-arm64"
           # Test macOS binaries on macOS x64
           - runner: macos-13
             runner-name: macos-x64
             test-targets: "osx-x64"
-            host-sources: "windows,macos-x64,macos-arm64"
+            host-sources: "windows,linux,macos-x64,macos-arm64"
           # Test macOS binaries on macOS ARM64
           - runner: macos-latest
             runner-name: macos-arm64
             test-targets: "osx-arm64"
-            host-sources: "windows,macos-x64,macos-arm64"
+            host-sources: "windows,linux,macos-x64,macos-arm64"
     
     runs-on: ${{ matrix.runner }}
     name: Validate on ${{ matrix.runner-name }}
@@ -322,7 +327,7 @@ jobs:
           echo "|---------------|---------|------------------------|---------|" >> platform-report.md
           
           # Check which artifacts exist
-          for host in windows macos-x64 macos-arm64; do
+          for host in windows linux macos-x64 macos-arm64; do
             if [ -d "binaries-$host" ]; then
               target_count=$(ls "binaries-$host" 2>/dev/null | wc -l)
               targets=$(ls "binaries-$host" 2>/dev/null | tr '\n' ', ' | sed 's/,$//')
@@ -352,38 +357,40 @@ jobs:
           echo "" >> platform-report.md
           echo "## Target Platform Support" >> platform-report.md
           echo "" >> platform-report.md
-          echo "| Target Platform | Windows Host | macOS x64 Host | macOS ARM64 Host | Runtime Validation |" >> platform-report.md
-          echo "|-----------------|--------------|----------------|------------------|-------------------|" >> platform-report.md
+          echo "| Target Platform | Windows Host | Linux Host | macOS x64 Host | macOS ARM64 Host | Runtime Validation |" >> platform-report.md
+          echo "|-----------------|--------------|------------|----------------|------------------|-------------------|" >> platform-report.md
           
           for target in linux-x64 linux-arm64 linux-musl-x64 linux-musl-arm64 osx-x64 osx-arm64; do
             win_status="❌"
+            linux_status="❌"
             mac_x64_status="❌"
             mac_arm64_status="❌"
             runtime_status="❌"
             
             # Check build status
             [ -f "binaries-windows/$target/Hello" ] && win_status="✅"
+            [ -f "binaries-linux/$target/Hello" ] && linux_status="✅"
             [ -f "binaries-macos-x64/$target/Hello" ] && mac_x64_status="✅"
             [ -f "binaries-macos-arm64/$target/Hello" ] && mac_arm64_status="✅"
             
             # Runtime validation status
             if [[ "$target" == *"x64"* ]] && [[ "$target" == "linux"* ]]; then
               # For Linux x64 targets, check if validation job succeeded
-              if [ -f "binaries-windows/$target/Hello" ] || [ -f "binaries-macos-x64/$target/Hello" ] || [ -f "binaries-macos-arm64/$target/Hello" ]; then
+              if [ -f "binaries-windows/$target/Hello" ] || [ -f "binaries-linux/$target/Hello" ] || [ -f "binaries-macos-x64/$target/Hello" ] || [ -f "binaries-macos-arm64/$target/Hello" ]; then
                 runtime_status="✅ Testable"
               else
                 runtime_status="❌ No binaries"
               fi
             elif [[ "$target" == "osx-x64" ]]; then
               # For macOS x64 targets
-              if [ -f "binaries-windows/$target/Hello" ] || [ -f "binaries-macos-x64/$target/Hello" ] || [ -f "binaries-macos-arm64/$target/Hello" ]; then
+              if [ -f "binaries-windows/$target/Hello" ] || [ -f "binaries-linux/$target/Hello" ] || [ -f "binaries-macos-x64/$target/Hello" ] || [ -f "binaries-macos-arm64/$target/Hello" ]; then
                 runtime_status="✅ Testable"
               else
                 runtime_status="❌ No binaries"
               fi
             elif [[ "$target" == "osx-arm64" ]]; then
               # For macOS ARM64 targets
-              if [ -f "binaries-windows/$target/Hello" ] || [ -f "binaries-macos-x64/$target/Hello" ] || [ -f "binaries-macos-arm64/$target/Hello" ]; then
+              if [ -f "binaries-windows/$target/Hello" ] || [ -f "binaries-linux/$target/Hello" ] || [ -f "binaries-macos-x64/$target/Hello" ] || [ -f "binaries-macos-arm64/$target/Hello" ]; then
                 runtime_status="✅ Testable"
               else
                 runtime_status="❌ No binaries"
@@ -392,7 +399,7 @@ jobs:
               runtime_status="🚫 ARM64 on x64"
             fi
             
-            echo "| $target | $win_status | $mac_x64_status | $mac_arm64_status | $runtime_status |" >> platform-report.md
+            echo "| $target | $win_status | $linux_status | $mac_x64_status | $mac_arm64_status | $runtime_status |" >> platform-report.md
           done
           
           echo "" >> platform-report.md
@@ -405,7 +412,7 @@ jobs:
           echo "| Host → Target | Binary Size | Architecture |" >> platform-report.md
           echo "|---------------|-------------|--------------|" >> platform-report.md
           
-          for host in windows macos-x64 macos-arm64; do
+          for host in windows linux macos-x64 macos-arm64; do
             if [ -d "binaries-$host" ]; then
               for target_dir in binaries-$host/*/; do
                 if [ -f "${target_dir}Hello" ]; then
