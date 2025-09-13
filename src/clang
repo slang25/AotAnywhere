@@ -6,13 +6,14 @@
 # STRATEGY:
 # 1. Extract the target triple (e.g., --target=x86_64-macos).
 # 2. Correct the triple to what Zig expects (e.g., --target=x86_64-macos-none).
-# 3. Filter the original arguments, removing flags that break zig cc.
-# 4. Execute zig cc with the corrected target FIRST, followed by the filtered args.
+# 3. Create a final command list, starting with 'cc' and the corrected target.
+# 4. Use a robust 'while' loop to process the rest of the arguments, handling
+#    pairs like '-framework Name' correctly and discarding problematic flags.
+# 5. Append the filtered arguments to the final command and execute.
 
 set -euo pipefail
 
 main() {
-    # Use a bash array to preserve arguments with spaces
     local -a original_args=("$@")
 
     if [[ -n "${ZIG_SHIM_DEBUG:-}" ]]; then
@@ -31,53 +32,65 @@ main() {
         if [[ "$arg" == --target=* ]]; then
             # Correct the triple by ensuring it ends with '-none'
             zig_target="${arg}-none"
-            zig_target="${zig_target//-macos-none-none/-macos-none}" # Fix double adding
+            zig_target="${zig_target//-macos-none-none/-macos-none}" # Prevent double adding
             break
         fi
     done
 
-    # If no target was found, we can't continue for cross-compilation
     if [[ -z "$zig_target" ]]; then
-        echo "[ERROR] No '--target' flag found in arguments. Cannot proceed." >&2
-        # As a fallback, try to execute zig cc directly, which might work for native builds.
-        exec zig cc "${original_args[@]}"
+        echo "[ERROR] No '--target' flag found for macOS cross-build. Cannot proceed." >&2
+        exit 1
     fi
     echo "[clang.sh] Detected and corrected target: $zig_target"
 
-    # --- 2. Filter the remaining arguments ---
-    local -a filtered_args=()
+    # --- 2. Build the final command, starting with the corrected target ---
+    local -a final_command=("cc" "$zig_target")
+
+    # --- 3. Robustly filter the remaining arguments using a while loop ---
     echo "[clang.sh] Filtering arguments for Zig..."
-    for arg in "${original_args[@]}"; do
-        case "$arg" in
+    while [[ $# -gt 0 ]]; do
+        local current_arg="$1"
+        local next_arg="${2:-}"
+
+        case "$current_arg" in
         # DISCARD the original, incorrect target flag
         --target=*)
-            ;; # Do nothing
-
-        # DISCARD problematic flags
-        -ld_classic | -L/usr/lib/swift)
-            echo "[clang.sh] Removing unsupported flag: $arg"
-            ;;
-        -lobjc | -lswiftCore | -lswiftFoundation | -lz | -licucore | -lm | -ldl)
-            echo "[clang.sh] Removing redundant system library flag: $arg"
+            shift 1
             ;;
 
-        # FIX bare framework names (though linking frameworks might now work automatically)
+        # KEEP correctly formed framework flags by consuming both parts.
+        -framework)
+            if [[ -n "$next_arg" ]]; then
+                final_command+=("$current_arg" "$next_arg")
+                shift 2
+            else
+                echo "[clang.sh] Warning: Discarding dangling '-framework' flag." >&2
+                shift 1
+            fi
+            ;;
+
+        # FIX bare framework names (just in case)
         CoreFoundation | Foundation | Security | AppKit | GSS | CryptoKit)
-            echo "[clang.sh] Fixing bare framework: '$arg' -> '-framework $arg'"
-            filtered_args+=("-framework" "$arg")
+            echo "[clang.sh] Fixing bare framework: '$current_arg' -> '-framework $current_arg'"
+            final_command+=("-framework" "$current_arg")
+            shift 1
+            ;;
+
+        # DISCARD redundant system library flags and other unsupported flags
+        -lobjc | -lswiftCore | -lswiftFoundation | -lz | -licucore | -lm | -ldl | -ld_classic | -L/usr/lib/swift)
+            echo "[clang.sh] Removing problematic flag: $current_arg"
+            shift 1
             ;;
 
         # KEEP everything else
         *)
-            filtered_args+=("$arg")
+            final_command+=("$current_arg")
+            shift 1
             ;;
         esac
     done
 
-    # --- 3. Rebuild and Execute the Command ---
-    local -a final_command=("cc" "$zig_target")
-    final_command+=("${filtered_args[@]}")
-
+    # --- 4. Execute the final, correctly ordered command ---
     if [[ -n "${ZIG_SHIM_DEBUG:-}" ]]; then
         echo "[DEBUG] Final modified command to be executed:"
         printf "  'zig' "
@@ -85,9 +98,9 @@ main() {
         echo
     fi
 
-    # The final command is 'zig cc --target=... <filtered_args>'
     exec zig "${final_command[@]}"
 }
 
 # --- Script Entry Point ---
+# Use "$@" to pass all original arguments to the main function's while loop
 main "$@"
