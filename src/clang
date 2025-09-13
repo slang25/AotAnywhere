@@ -7,31 +7,23 @@ set -euo pipefail
 
 # --- Main Logic ---
 main() {
-    # Use a bash array to preserve arguments with spaces. This is critical.
     local -a args=("$@")
 
-    # --- Optional Debug Logging ---
     if [[ -n "${ZIG_SHIM_DEBUG:-}" ]]; then
         echo "[DEBUG] Original args from build system:"
-        # Use printf for safer, more reliable quoting of args
         printf "  '%s'\n" "${args[@]}"
     fi
 
-    # --- Dependency Check ---
     if ! command -v zig &>/dev/null; then
         echo "Error: zig is not on the PATH." >&2
         exit 1
     fi
 
-    # --- Target and Host Detection ---
     local is_macos_target=false
     local is_macos_host=false
-
     if [[ "$OSTYPE" == "darwin"* ]]; then
         is_macos_host=true
     fi
-
-    # Loop through args to detect target. More robust than string matching.
     for arg in "${args[@]}"; do
         case "$arg" in
         *-apple-darwin* | -framework | *-macos*)
@@ -41,107 +33,69 @@ main() {
         esac
     done
 
-    # --- Argument Processing ---
-    # The 'filtered_args' array will be populated by the processing functions.
     local -a filtered_args=()
     if [[ "$is_macos_target" == true && "$is_macos_host" == false ]]; then
-        # --- Case 1: Cross-compiling to macOS (e.g., from Linux) ---
         echo "[clang.sh] Detected macOS cross-compilation. Processing args for Zig..."
-        process_macos_cross_compile_args "${args[@]}"
+        process_macos_args "${args[@]}"
     elif [[ "$is_macos_target" == true ]]; then
-        # --- Case 2: Native compilation on macOS ---
         echo "[clang.sh] Detected native macOS compilation. Processing args for Zig..."
-        process_macos_native_args "${args[@]}"
+        process_macos_args "${args[@]}" # The same logic applies
     else
-        # --- Case 3: Compiling for Linux ---
         echo "[clang.sh] Detected Linux compilation target. Processing args for Zig..."
         process_linux_args "${args[@]}"
     fi
 
-    # --- Optional Debug Logging ---
     if [[ -n "${ZIG_SHIM_DEBUG:-}" ]]; then
         echo "[DEBUG] Final modified command to be executed:"
-        # Use 'cc' as the subcommand for clarity
         printf "  'zig' 'cc' "
         printf "'%s' " "${filtered_args[@]}"
         echo
     fi
 
-    # --- Execution ---
-    # The "${filtered_args[@]}" syntax correctly handles args with spaces.
     exec zig cc "${filtered_args[@]}"
 }
 
 # --- Argument Processing Functions ---
 
-process_macos_cross_compile_args() {
-    echo "[clang.sh] Applying cross-compilation transformations."
+process_macos_args() {
+    echo "[clang.sh] Applying macOS argument transformations."
 
     while [[ $# -gt 0 ]]; do
-        case "$1" in
-        # === FIX: START ===
-        # Detect bare framework names passed by the .NET SDK and prepend the
-        # required '-framework' flag that 'zig cc' expects.
+        local current_arg="$1"
+        # Safely get the next argument, defaulting to empty if it doesn't exist
+        local next_arg="${2:-}"
+
+        case "$current_arg" in
+        # Case 1: A framework that already has the correct flag.
+        # We must consume both arguments in one step.
+        -framework)
+            if [[ -n "$next_arg" ]]; then
+                filtered_args+=("$current_arg" "$next_arg")
+                shift 2 # Consume both '-framework' and its value
+            else
+                echo "[clang.sh] Warning: Discarding dangling '-framework' flag." >&2
+                shift 1 # Consume just the flag
+            fi
+            ;;
+
+        # Case 2: A bare framework name. This is what we need to fix.
+        # We prepend '-framework' and consume only the current argument.
         CoreFoundation | Foundation | Security | AppKit | GSS | CryptoKit)
-            filtered_args+=("-framework" "$1")
-            shift # Consume the framework name
+            echo "[clang.sh] Fixing bare framework: '$current_arg' -> '-framework $current_arg'"
+            filtered_args+=("-framework" "$current_arg")
+            shift 1 # Consume just the framework name
             ;;
-        # === FIX: END ===
 
-        # Remove flags that LLD (Zig's linker) does not support.
-        -ld_classic)
-            shift # Discard this argument
+        # Case 3: Flags that LLD (Zig's linker) does not support or that
+        # break cross-compilation. Consume and discard them.
+        -ld_classic | -L/usr/lib/swift)
+            shift 1
             ;;
-        # Remove absolute macOS system paths that break cross-compilation.
-        -L/usr/lib/swift)
-            shift # Discard this argument
-            ;;
+
+        # Default case: Keep any other argument.
         *)
-            # Keep everything else.
-            filtered_args+=("$1")
-            shift
-            ;;
-        esac
-    done
-}
-
-process_macos_native_args() {
-    # This function is more complex as it tries to find the native SDK.
-    # We still add the framework fix for consistency.
-    local -a extra_args=()
-    if command -v xcrun &>/dev/null; then
-        local sdk_path
-        sdk_path=$(xcrun --show-sdk-path 2>/dev/null || true)
-        if [[ -n "$sdk_path" && -d "$sdk_path" ]];
-        then
-            echo "[clang.sh] Using macOS SDK found at: $sdk_path"
-            extra_args+=("-isysroot" "$sdk_path")
-        else
-            echo "[clang.sh] Warning: 'xcrun' failed to find SDK path. zig cc may fall back to its own." >&2
-        fi
-    else
-        echo "[clang.sh] Warning: 'xcrun' not found. zig cc will use its bundled SDK." >&2
-    fi
-
-    # Prepend SDK flags and then filter the rest of the arguments.
-    filtered_args+=("${extra_args[@]}")
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-        # === FIX: START ===
-        # Apply the same fix here for consistency, even though native
-        # clang might be more lenient.
-        CoreFoundation | Foundation | Security | AppKit | GSS | CryptoKit)
-            filtered_args+=("-framework" "$1")
-            shift # Consume the framework name
-            ;;
-        # === FIX: END ===
-
-        -ld_classic) # Remove unsupported flag
-            shift
-            ;;
-        *)
-            filtered_args+=("$1")
-            shift
+            filtered_args+=("$current_arg")
+            shift 1
             ;;
         esac
     done
@@ -153,18 +107,14 @@ process_linux_args() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-        # Flags to remove completely
         -lz | -pie | -Wl,-pie | -Wl,-e0x0)
             shift
             ;;
-        # Flags to replace
         --discard-all)
             filtered_args+=("--as-needed")
             shift
             ;;
-        # .NET issue workaround (removes single quotes)
         "'-Wl,-rpath,\$ORIGIN'")
-            # Use single quotes here to add the literal string to the array.
             filtered_args+=('-Wl,-rpath,$ORIGIN')
             shift
             ;;
@@ -177,5 +127,4 @@ process_linux_args() {
 }
 
 # --- Script Entry Point ---
-# Pass all script arguments to the main function.
 main "$@"
