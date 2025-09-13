@@ -82,8 +82,8 @@ process_macos_cross_compile_args() {
         -ld_classic | -lobjc | -lz | -ldl | -lm | -licucore | -lswiftCore | -lswiftFoundation)
             shift
             ;;
-        # Flags that consume the next argument
-        -L/usr/lib/swift | -framework)
+        # Flags that consume the next argument  
+        -L/usr/lib/swift)
             shift 2
             ;;
         *)

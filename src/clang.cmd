@@ -41,11 +41,6 @@ if not errorlevel 1 (
     set "args=!args: -lswiftCore = !"
     set "args=!args: -lswiftFoundation = !"
     set "args=!args: -L/usr/lib/swift = !"
-    set "args=!args: -framework CoreFoundation = !"
-    set "args=!args: -framework Foundation = !"
-    set "args=!args: -framework Security = !"
-    set "args=!args: -framework CryptoKit = !"
-    set "args=!args: -framework GSS = !"
 
 ) else (
     rem --- Linux Cross-Compilation Target ---
