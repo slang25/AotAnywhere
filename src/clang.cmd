@@ -23,6 +23,13 @@ if defined ZIG_SHIM_DEBUG (
 rem Pad arguments with spaces to make string replacement robust and simple.
 set "args= %args% "
 
+rem --- Check if passthrough mode is enabled ---
+if "%ZIG_CC_PASSTHROUGH%"=="true" (
+    echo [clang.cmd] ZIG_CC_PASSTHROUGH enabled - passing arguments unmodified to zig cc.
+    call :trim_args args
+    goto execute
+)
+
 rem --- Target Detection ---
 echo !args! | findstr /C:"-apple-darwin" /C:"-framework" /C:"-exported_symbols_list" /C:"x86_64-macos" /C:"aarch64-macos" >nul
 if not errorlevel 1 (
@@ -74,6 +81,7 @@ if not errorlevel 1 (
 rem --- Final Cleanup ---
 call :trim_args args
 
+:execute
 if defined ZIG_SHIM_DEBUG (
     echo [DEBUG] Final command: zig cc !args!
 )

@@ -42,7 +42,12 @@ main() {
 
     # --- Argument Processing ---
     local -a filtered_args=()
-    if [[ "$is_macos_target" == true && "$is_macos_host" == false ]]; then
+    
+    # Check if passthrough mode is enabled
+    if [[ "${ZIG_CC_PASSTHROUGH:-}" == "true" ]]; then
+        echo "[clang.sh] ZIG_CC_PASSTHROUGH enabled - passing arguments unmodified to zig cc."
+        filtered_args=("${args[@]}")
+    elif [[ "$is_macos_target" == true && "$is_macos_host" == false ]]; then
         # --- Case 1: Cross-compiling to macOS (e.g., from Linux) ---
         echo "[clang.sh] Detected macOS cross-compilation target."
         process_macos_cross_compile_args "${args[@]}"
