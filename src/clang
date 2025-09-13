@@ -34,14 +34,11 @@ main() {
     done
 
     local -a filtered_args=()
-    if [[ "$is_macos_target" == true && "$is_macos_host" == false ]]; then
-        echo "[clang.sh] Detected macOS cross-compilation. Processing args for Zig..."
+    if [[ "$is_macos_target" == true ]]; then
+        echo "[clang.sh] Detected macOS target. Processing args for Zig..."
         process_macos_args "${args[@]}"
-    elif [[ "$is_macos_target" == true ]]; then
-        echo "[clang.sh] Detected native macOS compilation. Processing args for Zig..."
-        process_macos_args "${args[@]}" # The same logic applies
     else
-        echo "[clang.sh] Detected Linux compilation target. Processing args for Zig..."
+        echo "[clang.sh] Detected Linux target. Processing args for Zig..."
         process_linux_args "${args[@]}"
     fi
 
@@ -62,33 +59,41 @@ process_macos_args() {
 
     while [[ $# -gt 0 ]]; do
         local current_arg="$1"
-        # Safely get the next argument, defaulting to empty if it doesn't exist
         local next_arg="${2:-}"
 
         case "$current_arg" in
-        # Case 1: A framework that already has the correct flag.
-        # We must consume both arguments in one step.
+        # Case 1: Handle correctly formed framework flags by consuming both parts.
         -framework)
             if [[ -n "$next_arg" ]]; then
                 filtered_args+=("$current_arg" "$next_arg")
-                shift 2 # Consume both '-framework' and its value
+                shift 2
             else
                 echo "[clang.sh] Warning: Discarding dangling '-framework' flag." >&2
-                shift 1 # Consume just the flag
+                shift 1
             fi
             ;;
 
-        # Case 2: A bare framework name. This is what we need to fix.
-        # We prepend '-framework' and consume only the current argument.
+        # Case 2: Fix bare framework names from the build system.
         CoreFoundation | Foundation | Security | AppKit | GSS | CryptoKit)
             echo "[clang.sh] Fixing bare framework: '$current_arg' -> '-framework $current_arg'"
             filtered_args+=("-framework" "$current_arg")
-            shift 1 # Consume just the framework name
+            shift 1
             ;;
 
-        # Case 3: Flags that LLD (Zig's linker) does not support or that
-        # break cross-compilation. Consume and discard them.
+        # === FIX: START ===
+        # Case 3: Remove redundant system library flags. On macOS, these are
+        # implicitly linked via libSystem when any framework is used.
+        # 'zig cc' fails trying to find them as standalone .tbd files.
+        -lobjc | -lswiftCore | -lswiftFoundation | -lz | -licucore | -lm | -ldl)
+            echo "[clang.sh] Removing redundant macOS system library flag: $current_arg"
+            shift 1 # Consume and discard the flag
+            ;;
+        # === FIX: END ===
+
+        # Case 4: Remove other flags unsupported by zig's linker or that
+        # break cross-compilation.
         -ld_classic | -L/usr/lib/swift)
+            echo "[clang.sh] Removing unsupported/problematic flag: $current_arg"
             shift 1
             ;;
 
@@ -102,7 +107,7 @@ process_macos_args() {
 }
 
 process_linux_args() {
-    # This function remains unchanged as the issue is specific to macOS.
+    # This function remains unchanged.
     filtered_args+=("-Wl,-u,__Module")
 
     while [[ $# -gt 0 ]]; do
