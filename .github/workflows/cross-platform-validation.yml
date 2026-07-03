@@ -24,8 +24,8 @@ jobs:
             host-name: linux
             targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
           
-          # macOS x64 host builds  
-          - host: macos-13
+          # macOS x64 host builds
+          - host: macos-15-intel
             host-name: macos-x64
             targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
           
@@ -39,10 +39,10 @@ jobs:
     
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
       
@@ -148,7 +148,7 @@ jobs:
           fi
       
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()  # Upload artifacts even if some builds failed
         with:
           name: binaries-${{ matrix.host-name }}
@@ -169,7 +169,7 @@ jobs:
             test-targets: "linux-x64,linux-musl-x64"
             host-sources: "windows,linux,macos-x64,macos-arm64"
           # Test macOS binaries on macOS x64
-          - runner: macos-13
+          - runner: macos-15-intel
             runner-name: macos-x64
             test-targets: "osx-x64"
             host-sources: "windows,linux,macos-x64,macos-arm64"
@@ -184,7 +184,7 @@ jobs:
     
     steps:
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
       
       - name: Test binaries from all host platforms
         shell: bash
@@ -310,7 +310,7 @@ jobs:
     
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
       
       - name: Generate platform support matrix
@@ -456,7 +456,7 @@ jobs:
           cat platform-report.md >> $GITHUB_STEP_SUMMARY
       
       - name: Upload platform report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: platform-support-report
           path: platform-report.md

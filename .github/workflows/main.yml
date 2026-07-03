@@ -20,12 +20,11 @@ jobs:
     name: Build and test ${{ matrix.vm }}
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Setup dotnet
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
-          include-prerelease: true
       - name: Build (CI)
         if: ${{ github.event.inputs.version == '' }}
         run: |
@@ -33,7 +32,7 @@ jobs:
           dotnet publish -r linux-x64 -c Release test/Hello.csproj -p:StripSymbols=false
       - name: Upload test binary
         if: ${{ github.event.inputs.version == '' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Hello
           path: test/bin/Release/net8.0/linux-x64/publish/Hello
@@ -42,7 +41,7 @@ jobs:
         run: dotnet build -t:Pack src/PublishAotCross.nuproj -p:Version=${{ github.event.inputs.version }}
       - name: Archive NuGet
         if: ${{ github.event.inputs.version != '' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: PublishAotCross.${{ github.event.inputs.version }}.nupkg
           path: src/bin/Debug/PublishAotCross.${{ github.event.inputs.version }}.nupkg
@@ -58,7 +57,7 @@ jobs:
     name: Try launching
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
       - name: Launch
         run: |
           chmod +x ./Hello/Hello
