@@ -45,14 +45,18 @@ For each host-target combination:
 - Compiles the test application for each target platform
 - Validates binary creation and uploads artifacts
 
-### 3. Runtime Validation
+### 3. macOS Code Signing
+A dedicated job generates a throwaway self-signed Developer ID-style certificate with rcodesign. Every build host then publishes `osx-x64` with the `PublishAotCrossSignP12File` properties set, exercising the package's rcodesign signing integration from Windows, Linux and macOS hosts; `osx-arm64` keeps zig's default ad-hoc signature so that path stays covered. The build job asserts the expected certificate is present with `rcodesign print-signature-info`.
+
+### 4. Runtime Validation
 - Downloads build artifacts from all host platforms
 - Tests x64 binaries on Ubuntu (can't test ARM64 on x64 runners)
 - Tests macOS binaries on appropriate macOS runners (x64 on macos-13, ARM64 on macos-latest)
+- On macOS runners, verifies code signatures with `codesign --verify --strict` (and checks the `osx-x64` binaries carry the CI test certificate) before running
 - Verifies "Hello World" output
 - Reports success/failure rates
 
-### 4. Platform Support Report
+### 5. Platform Support Report
 Generates a comprehensive report showing:
 - Which host-target combinations work
 - Binary sizes and architecture information

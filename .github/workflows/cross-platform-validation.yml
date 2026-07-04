@@ -7,6 +7,14 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
+env:
+  # rcodesign (https://github.com/indygreg/apple-platform-rs) generates the
+  # test signing certificate, signs macOS binaries during the build matrix
+  # (via the PublishAotCross signing properties) and verifies the results.
+  # Deliberately NOT named RCODESIGN_*: rcodesign feeds env vars with that
+  # prefix into its config loader and errors on unknown keys.
+  APPLE_CODESIGN_VERSION: 0.29.0
+
 jobs:
   # Build the prebuilt clang shims once, on a host whose zig can cross-compile
   # every host's shim. The build jobs below consume these instead of compiling
@@ -33,9 +41,42 @@ jobs:
           name: prebuilt-shims
           path: src/obj/shim/
 
+  # Generate a throwaway self-signed Developer ID-style certificate that the
+  # build jobs use to exercise the signing integration. Generated once here:
+  # rcodesign emits a PEM pair, and Ubuntu's OpenSSL converts it to a PKCS#12
+  # file with -legacy — the PFX encryption rcodesign can read back.
+  test-cert:
+    runs-on: ubuntu-latest
+    name: Generate test signing certificate
+    steps:
+      - name: Generate self-signed signing certificate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "apple-codesign/$APPLE_CODESIGN_VERSION" \
+            -R indygreg/apple-platform-rs \
+            -p "apple-codesign-$APPLE_CODESIGN_VERSION-x86_64-unknown-linux-musl.tar.gz"
+          tar xzf apple-codesign-*.tar.gz --strip-components=1
+          mkdir test-cert
+          ./rcodesign generate-self-signed-certificate \
+            --person-name "PublishAotCross CI Test" \
+            --profile developer-id-application \
+            --pem-filename test-cert/cert
+          openssl pkcs12 -export -legacy \
+            -inkey test-cert/cert.key -in test-cert/cert.crt \
+            -out test-cert/cert.p12 -passout pass:citest
+          printf citest > test-cert/cert.pass
+          rm test-cert/cert.key test-cert/cert.crt
+      - name: Upload test certificate
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-signing-cert
+          path: test-cert/
+
   # Build matrix: Test building from different host platforms to different target platforms
   build:
-    needs: pack
+    needs: [pack, test-cert]
     strategy:
       fail-fast: false
       matrix:
@@ -86,6 +127,38 @@ jobs:
           name: prebuilt-shims
           path: src/shim
 
+      - name: Download test signing certificate
+        uses: actions/download-artifact@v8
+        with:
+          name: test-signing-cert
+          path: test-cert
+
+      # The osx-x64 publishes below sign via the PublishAotCross rcodesign
+      # integration, so every build host needs rcodesign on PATH.
+      - name: Install rcodesign
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$(uname -s)-$(uname -m)" in
+            Linux-x86_64)         asset="x86_64-unknown-linux-musl.tar.gz" ;;
+            Linux-aarch64)        asset="aarch64-unknown-linux-musl.tar.gz" ;;
+            Darwin-*)             asset="macos-universal.tar.gz" ;;
+            MINGW*|MSYS*|CYGWIN*) asset="x86_64-pc-windows-msvc.zip" ;;
+            *) echo "No rcodesign asset for $(uname -s)-$(uname -m)"; exit 1 ;;
+          esac
+          mkdir .rcodesign && cd .rcodesign
+          gh release download "apple-codesign/$APPLE_CODESIGN_VERSION" \
+            -R indygreg/apple-platform-rs \
+            -p "apple-codesign-$APPLE_CODESIGN_VERSION-$asset"
+          if [[ "$asset" == *.zip ]]; then
+            unzip -q apple-codesign-*.zip || python -m zipfile -e apple-codesign-*.zip .
+          else
+            tar xzf apple-codesign-*.tar.gz
+          fi
+          mv apple-codesign-*/rcodesign* .
+          ./rcodesign --version
+
       - name: Build and publish for all target platforms
         shell: bash
         env:
@@ -93,7 +166,10 @@ jobs:
         run: |
           # Split the targets and build each one
           IFS=',' read -ra TARGET_ARRAY <<< "${{ matrix.targets }}"
-          
+
+          # rcodesign is invoked by the SignMacOsBinary target for osx-x64
+          export PATH="$PWD/.rcodesign:$PATH"
+
           build_success=true
           
           for target in "${TARGET_ARRAY[@]}"; do
@@ -123,12 +199,30 @@ jobs:
               fi
             elif [[ "$target" == osx-* ]]; then
               echo "Cross-compiling to macOS target using PublishAotCross..."
+              # osx-x64 is signed with the throwaway CI certificate to
+              # exercise the rcodesign signing integration from every host;
+              # osx-arm64 is left with zig's default ad-hoc signature so that
+              # path stays covered too.
+              sign_args=()
+              if [[ "$target" == "osx-x64" ]]; then
+                p12="$PWD/test-cert/cert.p12"
+                pass="$PWD/test-cert/cert.pass"
+                if command -v cygpath >/dev/null 2>&1; then
+                  p12=$(cygpath -w "$p12")
+                  pass=$(cygpath -w "$pass")
+                fi
+                sign_args=(
+                  "-p:PublishAotCrossSignP12File=$p12"
+                  "-p:PublishAotCrossSignP12PasswordFile=$pass"
+                )
+              fi
               # For macOS targets, use PublishAotCross for cross-compilation
               if dotnet publish test/Hello.csproj \
                 -r "$target" \
                 -c Release \
                 -p:StripSymbols=false \
                 -p:InvariantGlobalization=true \
+                "${sign_args[@]}" \
                 --output "artifacts/${{ matrix.host-name }}/$target"; then
                 
                 echo "✅ Cross-compilation build succeeded for $target"
@@ -160,7 +254,17 @@ jobs:
                 # Try to get binary size
                 size_kb=$(du -k "artifacts/${{ matrix.host-name }}/$target/$binary_name" | cut -f1)
                 echo "Binary size: ${size_kb}KB"
-                
+
+                # Assert the signing integration actually signed osx-x64
+                if [[ "$target" == "osx-x64" ]]; then
+                  if rcodesign print-signature-info "artifacts/${{ matrix.host-name }}/$target/$binary_name" | grep -q "PublishAotCross CI Test"; then
+                    echo "✅ Signature check: signed with the CI test certificate"
+                  else
+                    echo "❌ Signature check: expected CI test certificate signature not found"
+                    build_success=false
+                  fi
+                fi
+
               else
                 echo "❌ Binary not found after successful build: $binary_name for $target"
                 echo "Contents of output directory:"
@@ -292,7 +396,24 @@ jobs:
               
               # Make executable
               chmod +x "$binary_path"
-              
+
+              # macOS binaries: verify the code signature before running.
+              # osx-x64 was signed with the CI test certificate by the build
+              # job; osx-arm64 carries zig's ad-hoc linker signature. Both
+              # must pass strict verification.
+              if [[ "$target" == osx-* ]]; then
+                echo -n "  Signature check: "
+                if ! codesign --verify --strict "$binary_path"; then
+                  echo "❌ FAIL - invalid code signature"
+                  continue
+                fi
+                if [[ "$target" == "osx-x64" ]] && ! codesign -dvv "$binary_path" 2>&1 | grep -q "PublishAotCross CI Test"; then
+                  echo "❌ FAIL - not signed with the CI test certificate"
+                  continue
+                fi
+                echo "✅ valid"
+              fi
+
               # Try to run the binary with timeout
               echo -n "  Execution test: "
               if timeout 10s "$binary_path" > /tmp/output.txt 2>&1; then

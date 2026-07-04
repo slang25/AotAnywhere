@@ -42,6 +42,17 @@ pub fn main(init: std.process.Init) !void {
     var out: Args = .empty;
     try out.appendSlice(arena, &.{ "zig", "cc" });
 
+    if (isQueryInvocation(args)) {
+        // Toolchain queries (the ILC targets probe `clang --version` on
+        // macOS hosts) pass through with no injected flags, since callers
+        // parse the output. zig 0.16's `zig cc` drops a stray zero-byte a.o
+        // in the working directory even for pure queries, so these run with
+        // the shim's own (intermediate output) directory as cwd instead of
+        // the caller's project directory.
+        try out.appendSlice(arena, args);
+        runZigCcQuery(arena, io, out.items);
+    }
+
     if (detectMacosTarget(args)) {
         if (host_is_macos) {
             say("[clang shim] Detected native macOS compilation.", .{});
@@ -69,6 +80,17 @@ pub fn main(init: std.process.Init) !void {
     }
 
     runZigCc(io, out.items);
+}
+
+/// True for invocations that only query the toolchain and produce no
+/// compile or link output.
+fn isQueryInvocation(args: []const []const u8) bool {
+    if (args.len == 0) return true;
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-###"))
+            return true;
+    }
+    return false;
 }
 
 fn detectMacosTarget(args: []const []const u8) bool {
@@ -291,6 +313,26 @@ fn runZigCc(io: std.Io, argv: []const []const u8) noreturn {
     std.process.exit(127);
 }
 
+/// Runs a toolchain query as a child process with the shim's own directory
+/// as cwd (see the query branch in main), forwarding output and exit code.
+fn runZigCcQuery(gpa: std.mem.Allocator, io: std.Io, argv: []const []const u8) noreturn {
+    var cwd: std.process.Child.Cwd = .inherit;
+    if (std.process.executablePathAlloc(io, gpa)) |self_path| {
+        if (std.fs.path.dirname(self_path)) |dir| cwd = .{ .path = dir };
+    } else |_| {}
+
+    const result = std.process.run(gpa, io, .{ .argv = argv, .cwd = cwd }) catch |err| {
+        reportSpawnError(err);
+        std.process.exit(127);
+    };
+    std.Io.File.stdout().writeStreamingAll(io, result.stdout) catch {};
+    std.Io.File.stderr().writeStreamingAll(io, result.stderr) catch {};
+    switch (result.term) {
+        .exited => |code| std.process.exit(code),
+        else => std.process.exit(1),
+    }
+}
+
 fn reportSpawnError(err: anyerror) void {
     if (err == error.FileNotFound) {
         std.debug.print("Error: zig is not on the PATH.\n", .{});
@@ -306,6 +348,14 @@ const testing = std.testing;
 fn expectArgs(expected: []const []const u8, actual: []const []const u8) !void {
     try testing.expectEqual(expected.len, actual.len);
     for (expected, actual) |e, a| try testing.expectEqualStrings(e, a);
+}
+
+test "query invocations pass through untouched" {
+    try testing.expect(isQueryInvocation(&.{"--version"}));
+    try testing.expect(isQueryInvocation(&.{ "-v", "--version" }));
+    try testing.expect(isQueryInvocation(&.{}));
+    try testing.expect(!isQueryInvocation(&.{ "-o", "hello", "main.o" }));
+    try testing.expect(!isQueryInvocation(&.{ "-c", "-o", "main.o", "main.c" }));
 }
 
 test "target detection" {
