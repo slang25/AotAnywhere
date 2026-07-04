@@ -1,0 +1,15 @@
+--- !tapi-tbd
+tbd-version:     4
+targets:         [ x86_64-macos, arm64-macos ]
+install-name:    '/System/Library/Frameworks/GSS.framework/Versions/A/GSS'
+exports:
+  - targets:         [ x86_64-macos, arm64-macos ]
+    symbols:          [ ___gss_c_nt_hostbased_service_oid_desc, ___gss_c_nt_user_name_oid_desc,
+                        ___gss_krb5_mechanism_oid_desc, ___gss_ntlm_mechanism_oid_desc,
+                        ___gss_spnego_mechanism_oid_desc, _gss_accept_sec_context,
+                        _gss_acquire_cred, _gss_acquire_cred_with_password, _gss_delete_sec_context,
+                        _gss_display_name, _gss_display_status, _gss_get_mic, _gss_import_name,
+                        _gss_indicate_mechs, _gss_init_sec_context, _gss_inquire_context,
+                        _gss_oid_equal, _gss_release_buffer, _gss_release_cred, _gss_release_name,
+                        _gss_release_oid_set, _gss_unwrap, _gss_verify_mic, _gss_wrap ]
+...

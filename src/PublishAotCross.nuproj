@@ -22,9 +22,13 @@
       <Pack>true</Pack>
       <PackagePath>build</PackagePath>
     </None>
-    <None Include="clang.cmd">
+    <None Include="clang_shim.zig">
       <Pack>true</Pack>
       <PackagePath>build</PackagePath>
+    </None>
+    <None Include="apple-sysroot/**">
+      <Pack>true</Pack>
+      <PackagePath>build/apple-sysroot</PackagePath>
     </None>
     <None Include="../README.md">
       <Pack>true</Pack>

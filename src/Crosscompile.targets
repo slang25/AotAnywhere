@@ -5,6 +5,13 @@
     <HostRuntimeIdentifier Condition="'$(HostRuntimeIdentifier)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</HostRuntimeIdentifier>
     <ZigVersion Condition="'$(ZigVersion)' == ''">0.16.0.2</ZigVersion>
     <UseExternalZig Condition="'$(UseExternalZig)' == ''">false</UseExternalZig>
+
+    <!-- The clang shim is compiled on demand with the zig toolchain above,
+         so a single Zig source covers every host OS and architecture. -->
+    <ClangShimSource>$(MSBuildThisFileDirectory)clang_shim.zig</ClangShimSource>
+    <ClangShimDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'publishaotcross'))</ClangShimDir>
+    <ClangShimBinary Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(ClangShimDir)clang.exe</ClangShimBinary>
+    <ClangShimBinary Condition="'$(ClangShimBinary)' == ''">$(ClangShimDir)clang</ClangShimBinary>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,6 +22,44 @@
       GeneratePathProperty="true"
       Condition="'$(UseExternalZig)' == 'false'" />
   </ItemGroup>
+
+  <UsingTask TaskName="SetEnvVar"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+
+    <ParameterGroup>
+      <Name ParameterType="System.String" Required="true" />
+      <Value ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+
+    <Task>
+      <Using Namespace="System" />
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+          Environment.SetEnvironmentVariable(Name, Value);
+        ]]>
+      </Code>
+    </Task>
+
+  </UsingTask>
+
+  <!-- Cross-compiling to macOS needs Apple linker stubs (.tbd files). The
+       package ships a minimal, self-generated set covering exactly the
+       symbols .NET's runtime packs reference; point the clang shim at it
+       unless the user supplied their own sysroot (via the
+       PublishAotCrossAppleSysroot property or the environment variable). -->
+  <Target Name="SetAppleSysroot"
+          BeforeTargets="SetupOSSpecificProps"
+          Condition="$(RuntimeIdentifier.StartsWith('osx')) and !$([MSBuild]::IsOSPlatform('OSX'))">
+
+    <PropertyGroup>
+      <PublishAotCrossAppleSysroot Condition="'$(PublishAotCrossAppleSysroot)' == ''">$(PUBLISHAOTCROSS_APPLE_SYSROOT)</PublishAotCrossAppleSysroot>
+      <PublishAotCrossAppleSysroot Condition="'$(PublishAotCrossAppleSysroot)' == ''">$(MSBuildThisFileDirectory)apple-sysroot</PublishAotCrossAppleSysroot>
+    </PropertyGroup>
+
+    <SetEnvVar Name="PUBLISHAOTCROSS_APPLE_SYSROOT" Value="$(PublishAotCrossAppleSysroot)" />
+
+  </Target>
 
   <UsingTask TaskName="PrependPath"
              TaskFactory="RoslynCodeTaskFactory"
@@ -36,10 +81,22 @@
 
   </UsingTask>
 
+  <Target Name="CompileClangShim"
+          DependsOnTargets="SetPathToZig"
+          BeforeTargets="SetupOSSpecificProps"
+          Inputs="$(ClangShimSource)"
+          Outputs="$(ClangShimBinary)">
+
+    <MakeDir Directories="$(ClangShimDir)" />
+    <Exec Command="zig build-exe -O ReleaseSafe -femit-bin=&quot;$(ClangShimBinary)&quot; &quot;$(ClangShimSource)&quot;" />
+
+  </Target>
+
   <Target Name="SetPathToClang"
+          DependsOnTargets="CompileClangShim"
           BeforeTargets="SetupOSSpecificProps">
 
-    <PrependPath Value="$(MSBuildThisFileDirectory)" />
+    <PrependPath Value="$(ClangShimDir)" />
 
   </Target>
 
@@ -83,6 +140,11 @@
       <TargetTriple Condition="'$(CrossCompileArch)' != '' and $(CrossCompileRid.StartsWith('linux'))">$(CrossCompileArch)-linux-gnu</TargetTriple>
       <TargetTriple Condition="'$(CrossCompileArch)' != '' and ($(CrossCompileRid.StartsWith('linux-musl')) or $(CrossCompileRid.StartsWith('alpine')))">$(CrossCompileArch)-linux-musl</TargetTriple>
       <TargetTriple Condition="'$(CrossCompileArch)' != '' and $(CrossCompileRid.StartsWith('osx'))">$(CrossCompileArch)-macos</TargetTriple>
+
+      <!-- Apple's strip/dsymutil reject zig-linked binaries (and don't exist
+           on Linux/Windows hosts), so default to keeping symbols for macOS
+           targets. An explicit /p:StripSymbols=true still wins. -->
+      <StripSymbols Condition="$(CrossCompileRid.StartsWith('osx'))">false</StripSymbols>
     </PropertyGroup>
 
     <ItemGroup>

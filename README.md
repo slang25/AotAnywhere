@@ -18,18 +18,18 @@ This NuGet package allows using [Zig](https://ziglang.org/) as the linker/sysroo
 ## Supported Target Platforms
 
 - **Linux** (x64, arm64, glibc, musl) - Full support from all host platforms
-- **macOS** (x64, arm64) - Experimental cross-compilation support with limitations (see below)
+- **macOS** (x64, arm64) - Cross-compilation using Apple linker stubs bundled with the package (see below)
 
 ### macOS Cross-Compilation
 
-Cross-compilation to macOS targets from Windows and Linux hosts is **experimentally supported** but has important limitations:
+No Apple SDK is available on Windows and Linux, so the package ships a minimal set of self-generated Apple linker stubs (`.tbd` files, under `build/apple-sysroot` in the package) covering exactly the symbols that .NET's runtime packs reference in CoreFoundation, Foundation, Security, GSS, Network, CryptoKit, the Swift runtime libraries, libobjc, libicucore and libz. This means the base class library works as it does in a native macOS build, including cryptography (CryptoKit/Security), HTTPS, and ICU globalization. Stubs only matter at link time; at run time the real system libraries on the target Mac are used.
 
-- ✅ Basic console applications may work
-- ⚠️ Applications using .NET libraries that depend on Objective-C runtime may fail
-- ⚠️ Applications using platform-specific APIs or native interop may not work
-- ❌ Full feature parity with native macOS builds is not guaranteed
+Things to know:
 
-For production macOS builds, using a macOS host is still recommended.
+- The stub symbol lists are generated from the .NET 8, 9, 10, and 11-preview runtime packs (`eng/generate-apple-sysroot.py`). If a future .NET version references new Apple symbols, the link fails with an unresolved symbol until the stubs are regenerated.
+- Symbols are not stripped for macOS targets (`StripSymbols` defaults to `false` there): Apple's `strip`/`dsymutil` are unavailable on other hosts and reject zig-linked binaries anyway.
+- zig gives the binary an ad-hoc code signature. That runs fine locally, but for distribution you should sign (and if needed notarize) the result on a Mac: `codesign --force --sign <identity> <binary>`.
+- To link against a real Apple SDK instead of the bundled stubs, set the `PublishAotCrossAppleSysroot` MSBuild property (or the `PUBLISHAOTCROSS_APPLE_SYSROOT` environment variable) to the SDK root.
 
 ## Usage
 

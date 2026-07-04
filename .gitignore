@@ -9,6 +9,9 @@ artifacts/
 # Temporary files
 tmp/
 
+# Downloaded runtime packs used to regenerate src/apple-sysroot
+eng/.cache/
+
 # IDE files
 .vs/
 .vscode/

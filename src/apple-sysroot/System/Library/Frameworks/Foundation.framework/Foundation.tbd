@@ -1,0 +1,27 @@
+--- !tapi-tbd
+tbd-version:     4
+targets:         [ x86_64-macos, arm64-macos ]
+install-name:    '/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation'
+exports:
+  - targets:         [ x86_64-macos, arm64-macos ]
+    symbols:          [ '_$s10Foundation12DataProtocolPAAE9copyBytes2toSiSw_tF',
+                        '_$s10Foundation15ContiguousBytesP010withUnsafeC0yqd__qd__SWKXEKlFTj',
+                        '_$s10Foundation4DataV11DeallocatorO4noneyA2EmFWC',
+                        '_$s10Foundation4DataV11DeallocatorOMa',
+                        '_$s10Foundation4DataV11bytesNoCopy5count11deallocatorACSv_SiAC11DeallocatorOtcfC',
+                        '_$s10Foundation4DataV15withUnsafeBytesyxxSWKXEKlF',
+                        '_$s10Foundation4DataV5countSivg',
+                        '_$s10Foundation4DataV9copyBytes2to4fromSiSryxG_SnySiGSgtlF',
+                        '_$s10Foundation4DataV9copyBytes2to5countySpys5UInt8VG_SitF',
+                        '_$s10Foundation4DataVAA0B8ProtocolAAMc',
+                        '_$s10Foundation4DataVAA15ContiguousBytesAAWP',
+                        '_$s10Foundation4DataVACycfC', '_$s10Foundation4DataVN',
+                        '_$s10Foundation4DataVSTAAMc',
+                        '_$s10Foundation4DataVyACxcSTRzs5UInt8V7ElementRtzlufC',
+                        '_$sSRyxG10Foundation12DataProtocolABs5UInt8VRszlMc',
+                        '_$sSRyxG10Foundation15ContiguousBytesABs5UInt8VRszlMc',
+                        '_$sSW10Foundation12DataProtocolAAMc', _NSTemporaryDirectory,
+                        '__swift_FORCE_LOAD_$_swiftFoundation' ]
+    objc-classes:     [ NSAutoreleasePool, NSFileManager, NSMutableString, NSNumber, NSProcessInfo,
+                        NSString, NSThread ]
+...

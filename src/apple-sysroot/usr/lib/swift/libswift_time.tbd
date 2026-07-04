@@ -1,0 +1,8 @@
+--- !tapi-tbd
+tbd-version:     4
+targets:         [ x86_64-macos, arm64-macos ]
+install-name:    '/usr/lib/swift/libswift_time.dylib'
+exports:
+  - targets:         [ x86_64-macos, arm64-macos ]
+    symbols:          [ '__swift_FORCE_LOAD_$_swift_time' ]
+...

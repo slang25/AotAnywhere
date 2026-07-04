@@ -1,0 +1,42 @@
+--- !tapi-tbd
+tbd-version:     4
+targets:         [ x86_64-macos, arm64-macos ]
+install-name:    '/usr/lib/swift/libswiftCore.dylib'
+exports:
+  - targets:         [ x86_64-macos, arm64-macos ]
+    symbols:          [ '_$s8RawValueSYTl', '_$sBoWV', '_$sSH13_rawHashValue4seedS2i_tFTq',
+                        '_$sSH4hash4intoys6HasherVz_tFTq', '_$sSH9hashValueSivgTq', '_$sSHMp',
+                        '_$sSHSQTb', '_$sSHsE13_rawHashValue4seedS2i_tF', '_$sSQ2eeoiySbx_xtFZTq',
+                        '_$sSQMp', '_$sSW5countSivg', '_$sSWN', '_$sSY8rawValue03RawB0QzvgTq',
+                        '_$sSY8rawValuexSg03RawB0Qz_tcfCTq', '_$sSYMp',
+                        '_$sSYsSHRzSH8RawValueSYRpzrlE04hashB0Sivg',
+                        '_$sSYsSHRzSH8RawValueSYRpzrlE08_rawHashB04seedS2i_tF',
+                        '_$sSYsSHRzSH8RawValueSYRpzrlE4hash4intoys6HasherVz_tF',
+                        '_$sSZss17FixedWidthIntegerRzrlEyxqd__cSzRd__lufC', '_$sSbN', '_$sSiN',
+                        '_$sSiSHsWP', '_$sSiSZsMc', '_$sSiSzsMc', '_$sSis17FixedWidthIntegersMc',
+                        '_$sSqMa', '_$sSw5start5countSwSvSg_SitcfC',
+                        '_$ss10_hashValue3forSix_tSHRzlF',
+                        '_$ss17_assertionFailure__4file4line5flagss5NeverOs12StaticStringV_SSAHSus6UInt32VtF',
+                        '_$ss2eeoiySbx_xtSYRzSQ8RawValueRpzlF', '_$ss5ErrorMp',
+                        '_$ss5ErrorP19_getEmbeddedNSErroryXlSgyFTq', '_$ss5ErrorP5_codeSivgTq',
+                        '_$ss5ErrorP7_domainSSvgTq', '_$ss5ErrorP9_userInfoyXlSgvgTq',
+                        '_$ss5ErrorPsE19_getEmbeddedNSErroryXlSgyF', '_$ss5ErrorPsE5_codeSivg',
+                        '_$ss5ErrorPsE7_domainSSvg', '_$ss5ErrorPsE9_userInfoyXlSgvg',
+                        '_$ss5Int32VMn', '_$ss5Int32VN', '_$ss5Int32VSHsWP', '_$ss5Int32VSQsWP',
+                        '_$ss5Int32VSZsMc', '_$ss5Int32VSzsMc',
+                        '_$ss5Int32Vs17FixedWidthIntegersMc', '_$ss5UInt8VMn', '_$ss5UInt8VN',
+                        '_$ss6HasherV7combineyyxSHRzlF', _swift_allocBox, _swift_allocError,
+                        _swift_allocObject, _swift_beginAccess, _swift_bridgeObjectRetain,
+                        _swift_checkMetadataState, _swift_deallocClassInstance, _swift_dynamicCast,
+                        _swift_endAccess, _swift_errorRelease, _swift_errorRetain,
+                        _swift_getAssociatedConformanceWitness, _swift_getAssociatedTypeWitness,
+                        _swift_getEnumCaseMultiPayload, _swift_getSingletonMetadata,
+                        _swift_getTypeByMangledNameInContext, _swift_getTypeByMangledNameInContext2,
+                        _swift_getTypeByMangledNameInContextInMetadataState,
+                        _swift_getTypeByMangledNameInContextInMetadataState2,
+                        _swift_getWitnessTable, _swift_initEnumMetadataMultiPayload,
+                        _swift_makeBoxUnique, _swift_release, _swift_retain,
+                        _swift_storeEnumTagMultiPayload, _swift_updateClassMetadata2,
+                        _swift_willThrow ]
+    objc-classes:     [ _TtCs12_SwiftObject ]
+...
