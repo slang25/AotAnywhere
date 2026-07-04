@@ -345,6 +345,17 @@ jobs:
           # Parse host sources and targets
           IFS=',' read -ra HOST_ARRAY <<< "${{ matrix.host-sources }}"
           IFS=',' read -ra TARGET_ARRAY <<< "${{ matrix.test-targets }}"
+
+          # macOS runners have no GNU `timeout` (coreutils installs it as
+          # `gtimeout`); without this fallback every execution test on the
+          # macOS runners fails with exit 127 before even starting the binary.
+          if command -v timeout >/dev/null 2>&1; then
+            run_with_timeout() { timeout 10s "$@"; }
+          elif command -v gtimeout >/dev/null 2>&1; then
+            run_with_timeout() { gtimeout 10s "$@"; }
+          else
+            run_with_timeout() { perl -e 'alarm shift; exec @ARGV' 10 "$@"; }
+          fi
           
           success_count=0
           total_count=0
@@ -416,7 +427,7 @@ jobs:
 
               # Try to run the binary with timeout
               echo -n "  Execution test: "
-              if timeout 10s "$binary_path" > /tmp/output.txt 2>&1; then
+              if run_with_timeout "$binary_path" > /tmp/output.txt 2>&1; then
                 output=$(cat /tmp/output.txt)
                 if [[ "$output" == "Hello World" ]]; then
                   echo "✅ SUCCESS - Output: '$output'"
@@ -460,8 +471,11 @@ jobs:
             echo "⚠️  No tests were run - this might indicate missing artifacts"
             exit 1
           else
-            echo "⚠️  Some tests failed. See details above."
-            # Don't exit 1 here to allow the workflow to continue and generate the report
+            # Fail the job: the report job still runs (if: always()), and a
+            # green check must mean the binaries actually ran. Soft-failing
+            # here hid a broken `timeout` on the macOS runners for months.
+            echo "❌ Some tests failed. See details above."
+            exit 1
           fi
 
   # Report: Summarize the platform support matrix
