@@ -11,7 +11,9 @@ env:
   # rcodesign (https://github.com/indygreg/apple-platform-rs) generates the
   # test signing certificate, signs macOS binaries during the build matrix
   # (via the PublishAotCross signing properties) and verifies the results.
-  RCODESIGN_VERSION: 0.29.0
+  # Deliberately NOT named RCODESIGN_*: rcodesign feeds env vars with that
+  # prefix into its config loader and errors on unknown keys.
+  APPLE_CODESIGN_VERSION: 0.29.0
 
 jobs:
   # Build the prebuilt clang shims once, on a host whose zig can cross-compile
@@ -52,9 +54,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download "apple-codesign/$RCODESIGN_VERSION" \
+          gh release download "apple-codesign/$APPLE_CODESIGN_VERSION" \
             -R indygreg/apple-platform-rs \
-            -p "apple-codesign-$RCODESIGN_VERSION-x86_64-unknown-linux-musl.tar.gz"
+            -p "apple-codesign-$APPLE_CODESIGN_VERSION-x86_64-unknown-linux-musl.tar.gz"
           tar xzf apple-codesign-*.tar.gz --strip-components=1
           mkdir test-cert
           ./rcodesign generate-self-signed-certificate \
@@ -146,9 +148,9 @@ jobs:
             *) echo "No rcodesign asset for $(uname -s)-$(uname -m)"; exit 1 ;;
           esac
           mkdir .rcodesign && cd .rcodesign
-          gh release download "apple-codesign/$RCODESIGN_VERSION" \
+          gh release download "apple-codesign/$APPLE_CODESIGN_VERSION" \
             -R indygreg/apple-platform-rs \
-            -p "apple-codesign-$RCODESIGN_VERSION-$asset"
+            -p "apple-codesign-$APPLE_CODESIGN_VERSION-$asset"
           if [[ "$asset" == *.zip ]]; then
             unzip -q apple-codesign-*.zip || python -m zipfile -e apple-codesign-*.zip .
           else
