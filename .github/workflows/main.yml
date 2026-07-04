@@ -60,5 +60,11 @@ jobs:
         uses: actions/download-artifact@v8
       - name: Launch
         run: |
-          chmod +x ./Hello/Hello
-          ./Hello/Hello
+          # download-artifact places the single-file "Hello" artifact at a path
+          # that varies with the action version, so locate the binary rather
+          # than hardcoding ./Hello/Hello.
+          bin=$(find . -type f -name Hello | head -1)
+          if [ -z "$bin" ]; then echo "Hello binary not found" >&2; exit 1; fi
+          echo "Launching $bin"
+          chmod +x "$bin"
+          "$bin"

@@ -57,7 +57,11 @@ jobs:
           dotnet-version: '8.0.x'
       
       - name: Build NuGet package
-        run: dotnet build -t:Pack src/PublishAotCross.nuproj
+        # Only build this host's own shim: it's a per-host smoke test, and some
+        # hosts' zig can't cross-compile the other shims (e.g. arm64-Windows zig
+        # segfaults building the x86_64-windows shim). The full set is built and
+        # published on windows-latest by the main.yml release job.
+        run: dotnet build -t:Pack src/PublishAotCross.nuproj -p:BuildAllShims=false
       
       - name: Build and publish for all target platforms
         shell: bash

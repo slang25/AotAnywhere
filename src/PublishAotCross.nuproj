@@ -9,6 +9,12 @@
     <PackHostRuntimeIdentifier Condition="'$(PackHostRuntimeIdentifier)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</PackHostRuntimeIdentifier>
     <ShimIntermediateDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(BaseIntermediateOutputPath)', 'shim'))</ShimIntermediateDir>
 
+    <!-- A full package needs every host's shim, so this defaults to true. Set
+         it to false to build only the pack host's own shim: useful for CI smoke
+         tests, and required on hosts whose zig can't cross-compile the others
+         (e.g. arm64-Windows zig 0.16 segfaults building the x86_64-windows shim). -->
+    <BuildAllShims Condition="'$(BuildAllShims)' == ''">true</BuildAllShims>
+
     <PackageId>PublishAotCross</PackageId>
     <Version Condition="'$(Version)' == ''">42.42.42-dev</Version>
     <Authors>Michal Strehovsky</Authors>
@@ -85,11 +91,13 @@
     <Error Condition="'$(_ZigTools)' == ''"
            Text="No Vezel.Zig.Toolsets package for pack host '$(PackHostRuntimeIdentifier)'. Set PackHostRuntimeIdentifier to a supported host RID." />
 
-    <MakeDir Directories="$(ShimIntermediateDir)%(ShimTarget.Identity)" />
+    <MakeDir Condition="'$(BuildAllShims)' == 'true' or '%(ShimTarget.Identity)' == '$(PackHostRuntimeIdentifier)'"
+             Directories="$(ShimIntermediateDir)%(ShimTarget.Identity)" />
 
     <!-- ReleaseSafe keeps runtime safety checks (the shim runs in the link
          hot path); -fstrip drops debug info to keep the package small. -->
-    <Exec Command="&quot;$(_ZigExe)&quot; build-exe -O ReleaseSafe -fstrip -target %(ShimTarget.Triple) -femit-bin=&quot;$(ShimIntermediateDir)%(ShimTarget.Identity)/%(ShimTarget.Exe)&quot; &quot;$(MSBuildProjectDirectory)/clang_shim.zig&quot;" />
+    <Exec Condition="'$(BuildAllShims)' == 'true' or '%(ShimTarget.Identity)' == '$(PackHostRuntimeIdentifier)'"
+          Command="&quot;$(_ZigExe)&quot; build-exe -O ReleaseSafe -fstrip -target %(ShimTarget.Triple) -femit-bin=&quot;$(ShimIntermediateDir)%(ShimTarget.Identity)/%(ShimTarget.Exe)&quot; &quot;$(MSBuildProjectDirectory)/clang_shim.zig&quot;" />
 
   </Target>
 
@@ -101,7 +109,8 @@
           BeforeTargets="_GetPackageFiles">
 
     <ItemGroup>
-      <None Include="$(ShimIntermediateDir)%(ShimTarget.Identity)/%(ShimTarget.Exe)">
+      <None Include="$(ShimIntermediateDir)%(ShimTarget.Identity)/%(ShimTarget.Exe)"
+            Condition="'$(BuildAllShims)' == 'true' or '%(ShimTarget.Identity)' == '$(PackHostRuntimeIdentifier)'">
         <Pack>true</Pack>
         <PackagePath>build/shim/%(ShimTarget.Identity)/</PackagePath>
       </None>
