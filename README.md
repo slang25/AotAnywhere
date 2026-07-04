@@ -28,7 +28,7 @@ No Apple SDK is available on Windows and Linux, so the package ships a minimal s
 
 Things to know:
 
-- The stub symbol lists are generated from the .NET 8, 9, 10, and 11-preview runtime packs (`eng/generate-apple-sysroot.py`). If a future .NET version references new Apple symbols, the link fails with an unresolved symbol until the stubs are regenerated.
+- The stub symbol lists are generated from the .NET 8, 9, 10, and 11-preview runtime packs (`eng/generate-apple-sysroot.cs`). If a future .NET version references new Apple symbols, the link fails with an unresolved symbol until the stubs are regenerated.
 - Symbols are not stripped for macOS targets (`StripSymbols` defaults to `false` there): Apple's `strip`/`dsymutil` are unavailable on other hosts and reject zig-linked binaries anyway.
 - zig gives osx-arm64 binaries an ad-hoc code signature (Apple Silicon refuses to run entirely unsigned code); osx-x64 binaries are left unsigned. Either way that only covers running locally — for distribution you should sign (and if needed notarize) the result, which works from any host, no Mac required; see [Signing and notarizing macOS binaries](#signing-and-notarizing-macos-binaries) below.
 - To link against a real Apple SDK instead of the bundled stubs, set the `PublishAotCrossAppleSysroot` MSBuild property (or the `PUBLISHAOTCROSS_APPLE_SYSROOT` environment variable) to the SDK root.

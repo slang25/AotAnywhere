@@ -15,6 +15,7 @@ eng/.cache/
 # IDE files
 .vs/
 .vscode/
+.idea/
 *.swp
 *.swo
 *~
