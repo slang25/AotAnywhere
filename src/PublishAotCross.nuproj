@@ -58,7 +58,8 @@
        Linux uses musl so the shim is a static binary that runs on any distro. -->
   <ItemGroup>
     <ShimTarget Include="win-x64"     Triple="x86_64-windows"     Exe="clang.exe" />
-    <ShimTarget Include="win-arm64"   Triple="aarch64-windows"    Exe="clang.exe" />
+    <!-- win-arm64 omitted: zig 0.16 aarch64-windows codegen produces a shim that
+         crashes at startup on real arm64-Windows, so that host is unsupported. -->
     <ShimTarget Include="win-x86"     Triple="x86-windows"        Exe="clang.exe" />
     <ShimTarget Include="osx-x64"     Triple="x86_64-macos"       Exe="clang" />
     <ShimTarget Include="osx-arm64"   Triple="aarch64-macos"      Exe="clang" />

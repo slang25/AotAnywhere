@@ -11,9 +11,11 @@ This NuGet package allows using [Zig](https://ziglang.org/) as the linker/sysroo
 
 ## Supported Host Platforms
 
-- **Windows** (x86, x64, arm64)
+- **Windows** (x86, x64)
 - **macOS** (x64, arm64)  
 - **Linux** (x64, arm64)
+
+> Windows on ARM64 is not currently supported as a host: zig 0.16's aarch64-windows code generation produces a `clang` shim that crashes at startup, so cross-compilation can't run there. This will be revisited when a newer Zig fixes it.
 
 ## Supported Target Platforms
 
@@ -81,7 +83,7 @@ Note: Using invariant globalization disables culture-specific formatting, sortin
 
 ### The clang shim
 
-Cross-compilation works by putting a small `clang` shim on `PATH` that rewrites the linker invocation and forwards it to `zig cc`. The package ships this shim **prebuilt** for the common host RIDs (Windows x86/x64/arm64, macOS x64/arm64, Linux x64/arm64) under `build/shim/<host-rid>`, so a normal build just copies it and does no compilation. On any other host the shim is compiled on demand from the bundled `clang_shim.zig` with the Zig toolchain. Pass `/p:UsePrebuiltClangShim=false` to force the compile-on-demand path.
+Cross-compilation works by putting a small `clang` shim on `PATH` that rewrites the linker invocation and forwards it to `zig cc`. The package ships this shim **prebuilt** for the common host RIDs (Windows x86/x64, macOS x64/arm64, Linux x64/arm64) under `build/shim/<host-rid>`, so a normal build just copies it and does no compilation. On any other host the shim is compiled on demand from the bundled `clang_shim.zig` with the Zig toolchain. Pass `/p:UsePrebuiltClangShim=false` to force the compile-on-demand path.
 
 The prebuilt shims are cross-compiled from a single machine at pack time (see `BuildClangShims` in `PublishAotCross.nuproj`); Zig makes producing all host binaries from one host trivial.
 

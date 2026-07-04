@@ -60,11 +60,6 @@ jobs:
             host-name: macos-arm64
             targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
 
-          # Windows ARM64 host builds
-          - host: windows-11-arm
-            host-name: windows-arm64
-            targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
-
           # Linux ARM64 host builds
           - host: ubuntu-24.04-arm
             host-name: linux-arm64
@@ -209,22 +204,22 @@ jobs:
           - runner: ubuntu-latest
             runner-name: ubuntu-x64
             test-targets: "linux-x64,linux-musl-x64"
-            host-sources: "windows,linux,macos-x64,macos-arm64,windows-arm64,linux-arm64"
+            host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
           # Test ARM64 binaries on Ubuntu ARM64 (now runnable on hosted ARM runners)
           - runner: ubuntu-24.04-arm
             runner-name: ubuntu-arm64
             test-targets: "linux-arm64,linux-musl-arm64"
-            host-sources: "windows,linux,macos-x64,macos-arm64,windows-arm64,linux-arm64"
+            host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
           # Test macOS binaries on macOS x64
           - runner: macos-15-intel
             runner-name: macos-x64
             test-targets: "osx-x64"
-            host-sources: "windows,linux,macos-x64,macos-arm64,windows-arm64,linux-arm64"
+            host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
           # Test macOS binaries on macOS ARM64
           - runner: macos-latest
             runner-name: macos-arm64
             test-targets: "osx-arm64"
-            host-sources: "windows,linux,macos-x64,macos-arm64,windows-arm64,linux-arm64"
+            host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
     
     runs-on: ${{ matrix.runner }}
     name: Validate on ${{ matrix.runner-name }}
@@ -374,7 +369,7 @@ jobs:
           echo "|---------------|---------|------------------------|---------|" >> platform-report.md
           
           # Check which artifacts exist
-          for host in windows linux macos-x64 macos-arm64 windows-arm64 linux-arm64; do
+          for host in windows linux macos-x64 macos-arm64 linux-arm64; do
             if [ -d "binaries-$host" ]; then
               target_count=$(ls "binaries-$host" 2>/dev/null | wc -l)
               targets=$(ls "binaries-$host" 2>/dev/null | tr '\n' ', ' | sed 's/,$//')
@@ -404,15 +399,14 @@ jobs:
           echo "" >> platform-report.md
           echo "## Target Platform Support" >> platform-report.md
           echo "" >> platform-report.md
-          echo "| Target Platform | Windows Host | Linux Host | macOS x64 Host | macOS ARM64 Host | Windows ARM64 Host | Linux ARM64 Host | Runtime Validation |" >> platform-report.md
-          echo "|-----------------|--------------|------------|----------------|------------------|--------------------|------------------|-------------------|" >> platform-report.md
+          echo "| Target Platform | Windows Host | Linux Host | macOS x64 Host | macOS ARM64 Host | Linux ARM64 Host | Runtime Validation |" >> platform-report.md
+          echo "|-----------------|--------------|------------|----------------|------------------|------------------|-------------------|" >> platform-report.md
 
           for target in linux-x64 linux-arm64 linux-musl-x64 linux-musl-arm64 osx-x64 osx-arm64; do
             win_status="❌"
             linux_status="❌"
             mac_x64_status="❌"
             mac_arm64_status="❌"
-            win_arm64_status="❌"
             linux_arm64_status="❌"
             runtime_status="❌ No binaries"
 
@@ -421,19 +415,18 @@ jobs:
             [ -f "binaries-linux/$target/Hello" ] && linux_status="✅"
             [ -f "binaries-macos-x64/$target/Hello" ] && mac_x64_status="✅"
             [ -f "binaries-macos-arm64/$target/Hello" ] && mac_arm64_status="✅"
-            [ -f "binaries-windows-arm64/$target/Hello" ] && win_arm64_status="✅"
             [ -f "binaries-linux-arm64/$target/Hello" ] && linux_arm64_status="✅"
 
             # Runtime validation: every target now has a validation runner
             # (x64 and ARM64 Linux, plus both macOS architectures).
-            for host in windows linux macos-x64 macos-arm64 windows-arm64 linux-arm64; do
+            for host in windows linux macos-x64 macos-arm64 linux-arm64; do
               if [ -f "binaries-$host/$target/Hello" ]; then
                 runtime_status="✅ Testable"
                 break
               fi
             done
 
-            echo "| $target | $win_status | $linux_status | $mac_x64_status | $mac_arm64_status | $win_arm64_status | $linux_arm64_status | $runtime_status |" >> platform-report.md
+            echo "| $target | $win_status | $linux_status | $mac_x64_status | $mac_arm64_status | $linux_arm64_status | $runtime_status |" >> platform-report.md
           done
           
           echo "" >> platform-report.md
@@ -446,7 +439,7 @@ jobs:
           echo "| Host → Target | Binary Size | Architecture |" >> platform-report.md
           echo "|---------------|-------------|--------------|" >> platform-report.md
           
-          for host in windows linux macos-x64 macos-arm64 windows-arm64 linux-arm64; do
+          for host in windows linux macos-x64 macos-arm64 linux-arm64; do
             if [ -d "binaries-$host" ]; then
               for target_dir in binaries-$host/*/; do
                 if [ -f "${target_dir}Hello" ]; then
