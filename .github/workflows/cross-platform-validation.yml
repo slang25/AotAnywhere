@@ -7,6 +7,13 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
+# A new push to the same PR supersedes the running validation; cancel it so
+# stacked runs don't starve the limited macOS runner pool. Push/dispatch runs
+# are never cancelled, only coalesced in the queue.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   # rcodesign (https://github.com/indygreg/apple-platform-rs) generates the
   # test signing certificate, signs macOS binaries during the build matrix
@@ -29,11 +36,29 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v7
+      # This job gates every build job below, and the shims only change when
+      # their zig sources or the pinned ZigVersion (in AotAnywhere.nuproj)
+      # change - so cache them and skip the ~3 minute compile on the vastly
+      # more common no-change run.
+      - name: Cache prebuilt shims
+        id: shim-cache
+        uses: actions/cache@v6
+        with:
+          path: src/obj/shim
+          key: prebuilt-shims-${{ hashFiles('src/clang_shim.zig', 'src/objcopy_shim.zig', 'src/AotAnywhere.nuproj') }}
       - name: Setup .NET
+        if: steps.shim-cache.outputs.cache-hit != 'true'
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
+      - name: Cache NuGet packages
+        if: steps.shim-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-pack-${{ runner.os }}-${{ hashFiles('src/AotAnywhere.nuproj') }}
       - name: Build NuGet package (all host shims)
+        if: steps.shim-cache.outputs.cache-hit != 'true'
         run: dotnet build -t:Pack src/AotAnywhere.nuproj
       - name: Upload prebuilt shims
         uses: actions/upload-artifact@v7
@@ -92,37 +117,24 @@ jobs:
           name: test-signing-cert
           path: test-cert/
 
-  # Build matrix: Test building from different host platforms to different target platforms
+  # Build matrix: every host builds all eight targets; the target list lives
+  # in the parallel build steps below (grouped glibc/musl/macOS).
   build:
     needs: [pack, test-cert]
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Windows host builds
           - host: windows-latest
             host-name: windows
-            targets: "linux-x64,linux-arm64,linux-arm,linux-musl-x64,linux-musl-arm64,linux-musl-arm,osx-x64,osx-arm64"
-          
-          # Linux host builds
           - host: ubuntu-latest
             host-name: linux
-            targets: "linux-x64,linux-arm64,linux-arm,linux-musl-x64,linux-musl-arm64,linux-musl-arm,osx-x64,osx-arm64"
-          
-          # macOS x64 host builds
           - host: macos-15-intel
             host-name: macos-x64
-            targets: "linux-x64,linux-arm64,linux-arm,linux-musl-x64,linux-musl-arm64,linux-musl-arm,osx-x64,osx-arm64"
-          
-          # macOS ARM64 host builds
           - host: macos-latest
             host-name: macos-arm64
-            targets: "linux-x64,linux-arm64,linux-arm,linux-musl-x64,linux-musl-arm64,linux-musl-arm,osx-x64,osx-arm64"
-
-          # Linux ARM64 host builds
           - host: ubuntu-24.04-arm
             host-name: linux-arm64
-            targets: "linux-x64,linux-arm64,linux-arm,linux-musl-x64,linux-musl-arm64,linux-musl-arm,osx-x64,osx-arm64"
 
     runs-on: ${{ matrix.host }}
     name: Build from ${{ matrix.host-name }}
@@ -140,7 +152,18 @@ jobs:
           dotnet-version: |
             8.0.x
             9.0.x
-      
+
+      # The publishes below restore the Vezel zig toolset for this host plus
+      # ILCompiler/runtime packs for all eight target RIDs - several hundred
+      # MB from nuget.org on every run without this cache.
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-publish-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/AotAnywhere.nuproj', 'src/Crosscompile.targets', 'test/Hello.csproj') }}
+          restore-keys: |
+            nuget-publish-${{ runner.os }}-${{ runner.arch }}-
+
       # Drop the prebuilt shims where StuDev.AotAnywhere.targets looks for them
       # (src/shim/<host-rid>), so the publishes below use this host's prebuilt
       # shim instead of compiling one — required on hosts whose zig can't.
@@ -182,148 +205,32 @@ jobs:
           mv apple-codesign-*/rcodesign* .
           ./rcodesign --version
 
-      - name: Build and publish for all target platforms
-        shell: bash
-        env:
-          ZIG_SHIM_DEBUG: "1"
-        run: |
-          # Split the targets and build each one
-          IFS=',' read -ra TARGET_ARRAY <<< "${{ matrix.targets }}"
+      # The eight publishes are independent, so run them as three concurrent
+      # streams (Actions parallel steps). Three streams - not eight - because
+      # the hosted runners have 3-4 cores and ILC is memory-hungry; grouping
+      # keeps them saturated without thrashing. build-targets.sh gives each
+      # target its own intermediate dir so the concurrent publishes of the
+      # shared test project don't race on obj/. A failed group surfaces at
+      # the implicit wait after the whole group finishes, so every target
+      # still gets attempted and uploaded.
+      - parallel:
+          - name: Build glibc Linux targets
+            shell: bash
+            env:
+              ZIG_SHIM_DEBUG: "1"
+            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "linux-x64,linux-arm64,linux-arm"
+          - name: Build musl Linux targets
+            shell: bash
+            env:
+              ZIG_SHIM_DEBUG: "1"
+            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "linux-musl-x64,linux-musl-arm64,linux-musl-arm"
+          - name: Build macOS targets
+            shell: bash
+            env:
+              ZIG_SHIM_DEBUG: "1"
+            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "osx-x64,osx-arm64"
 
-          # rcodesign is invoked by the SignMacOsBinary target for osx-x64
-          export PATH="$PWD/.rcodesign:$PATH"
 
-          build_success=true
-          
-          for target in "${TARGET_ARRAY[@]}"; do
-            echo "=========================================="
-            echo "Building for target: $target"
-            echo "=========================================="
-            
-            # Create output directory
-            mkdir -p "artifacts/${{ matrix.host-name }}/$target"
-            
-            # Determine if this is a cross-compilation or native build
-            if [[ "$target" == linux-* ]]; then
-              echo "Cross-compiling to Linux target using AotAnywhere..."
-              # Deliberately no StripSymbols override: it defaults to true
-              # for Linux targets and is served by the shim's llvm-objcopy
-              # personality, so this exercises the strip pipeline on every
-              # host x target combination.
-              if dotnet publish test/Hello.csproj \
-                -r "$target" \
-                -c Release \
-                -p:InvariantGlobalization=true \
-                --output "artifacts/${{ matrix.host-name }}/$target"; then
-                
-                echo "✅ Cross-compilation build succeeded for $target"
-                build_result="success"
-              else
-                echo "❌ Cross-compilation build failed for $target"
-                build_result="failed"
-              fi
-            elif [[ "$target" == osx-* ]]; then
-              echo "Cross-compiling to macOS target using AotAnywhere..."
-              # osx-x64 is signed with the throwaway CI certificate to
-              # exercise the rcodesign signing integration from every host;
-              # osx-arm64 is left with zig's default ad-hoc signature so that
-              # path stays covered too.
-              sign_args=()
-              if [[ "$target" == "osx-x64" ]]; then
-                p12="$PWD/test-cert/cert.p12"
-                pass="$PWD/test-cert/cert.pass"
-                if command -v cygpath >/dev/null 2>&1; then
-                  p12=$(cygpath -w "$p12")
-                  pass=$(cygpath -w "$pass")
-                fi
-                sign_args=(
-                  "-p:AotAnywhereSignP12File=$p12"
-                  "-p:AotAnywhereSignP12PasswordFile=$pass"
-                )
-              fi
-              # For macOS targets, use AotAnywhere for cross-compilation
-              if dotnet publish test/Hello.csproj \
-                -r "$target" \
-                -c Release \
-                -p:StripSymbols=false \
-                -p:InvariantGlobalization=true \
-                "${sign_args[@]}" \
-                --output "artifacts/${{ matrix.host-name }}/$target"; then
-                
-                echo "✅ Cross-compilation build succeeded for $target"
-                build_result="success"
-              else
-                echo "❌ Cross-compilation build failed for $target"
-                build_result="failed"
-              fi
-            else
-              echo "❌ Unknown target platform: $target"
-              build_result="failed"
-            fi
-            
-            # Verify the binary was created (if build was successful)
-            if [[ "$build_result" == "success" ]]; then
-              binary_name="Hello"
-              
-              if [ -f "artifacts/${{ matrix.host-name }}/$target/$binary_name" ]; then
-                echo "✅ Binary confirmed: $binary_name for $target"
-                
-                # Show file info
-                ls -la "artifacts/${{ matrix.host-name }}/$target/$binary_name"
-                
-                # Show binary type if file command is available
-                if command -v file >/dev/null 2>&1; then
-                  file "artifacts/${{ matrix.host-name }}/$target/$binary_name"
-                fi
-                
-                # Try to get binary size
-                size_kb=$(du -k "artifacts/${{ matrix.host-name }}/$target/$binary_name" | cut -f1)
-                echo "Binary size: ${size_kb}KB"
-
-                # Assert the strip pipeline ran for Linux targets: the
-                # publish must produce the Hello.dbg symbol sidecar.
-                if [[ "$target" == linux-* ]]; then
-                  if [ -f "artifacts/${{ matrix.host-name }}/$target/Hello.dbg" ]; then
-                    echo "✅ Symbol sidecar check: Hello.dbg present"
-                  else
-                    echo "❌ Symbol sidecar check: Hello.dbg missing (StripSymbols pipeline did not run)"
-                    build_success=false
-                  fi
-                fi
-
-                # Assert the signing integration actually signed osx-x64
-                if [[ "$target" == "osx-x64" ]]; then
-                  if rcodesign print-signature-info "artifacts/${{ matrix.host-name }}/$target/$binary_name" | grep -q "AotAnywhere CI Test"; then
-                    echo "✅ Signature check: signed with the CI test certificate"
-                  else
-                    echo "❌ Signature check: expected CI test certificate signature not found"
-                    build_success=false
-                  fi
-                fi
-
-              else
-                echo "❌ Binary not found after successful build: $binary_name for $target"
-                echo "Contents of output directory:"
-                ls -la "artifacts/${{ matrix.host-name }}/$target/" || echo "Output directory not found"
-                build_success=false
-              fi
-            elif [[ "$build_result" == "failed" ]]; then
-              build_success=false
-            fi
-            # Note: "skipped" builds don't count as failures
-            
-            echo ""
-          done
-          
-          if [ "$build_success" = false ]; then
-            echo "❌ One or more builds failed"
-            # Don't exit here - let the workflow continue to upload artifacts for successful builds
-            echo "build_success=false" >> $GITHUB_OUTPUT
-          else
-            echo "🎉 All builds completed successfully!"
-            echo "build_success=true" >> $GITHUB_OUTPUT
-          fi
-      
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         if: always()  # Upload artifacts even if some builds failed
