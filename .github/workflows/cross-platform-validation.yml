@@ -183,11 +183,13 @@ jobs:
             # Determine if this is a cross-compilation or native build
             if [[ "$target" == linux-* ]]; then
               echo "Cross-compiling to Linux target using AotAnywhere..."
-              # Build for Linux targets using AotAnywhere
+              # Deliberately no StripSymbols override: it defaults to true
+              # for Linux targets and is served by the shim's llvm-objcopy
+              # personality, so this exercises the strip pipeline on every
+              # host x target combination.
               if dotnet publish test/Hello.csproj \
                 -r "$target" \
                 -c Release \
-                -p:StripSymbols=false \
                 -p:InvariantGlobalization=true \
                 --output "artifacts/${{ matrix.host-name }}/$target"; then
                 
@@ -254,6 +256,17 @@ jobs:
                 # Try to get binary size
                 size_kb=$(du -k "artifacts/${{ matrix.host-name }}/$target/$binary_name" | cut -f1)
                 echo "Binary size: ${size_kb}KB"
+
+                # Assert the strip pipeline ran for Linux targets: the
+                # publish must produce the Hello.dbg symbol sidecar.
+                if [[ "$target" == linux-* ]]; then
+                  if [ -f "artifacts/${{ matrix.host-name }}/$target/Hello.dbg" ]; then
+                    echo "✅ Symbol sidecar check: Hello.dbg present"
+                  else
+                    echo "❌ Symbol sidecar check: Hello.dbg missing (StripSymbols pipeline did not run)"
+                    build_success=false
+                  fi
+                fi
 
                 # Assert the signing integration actually signed osx-x64
                 if [[ "$target" == "osx-x64" ]]; then
@@ -423,6 +436,27 @@ jobs:
                   continue
                 fi
                 echo "✅ valid"
+              fi
+
+              # Linux binaries were stripped by the shim's llvm-objcopy
+              # personality (StripSymbols defaults to true). Check that
+              # binutils can parse the rewritten section table, the debug
+              # link is in place and the symbol/debug sections are gone.
+              if [[ "$target" == linux-* ]] && command -v readelf >/dev/null 2>&1; then
+                echo -n "  Strip check: "
+                if ! readelf -S "$binary_path" > /tmp/sections.txt 2>&1; then
+                  echo "❌ FAIL - readelf could not parse the binary"
+                  continue
+                fi
+                if ! grep -q '\.gnu_debuglink' /tmp/sections.txt; then
+                  echo "❌ FAIL - .gnu_debuglink section missing"
+                  continue
+                fi
+                if grep -qE '\.symtab|\.debug_info' /tmp/sections.txt; then
+                  echo "❌ FAIL - symbol/debug sections still present"
+                  continue
+                fi
+                echo "✅ stripped, debuglink present"
               fi
 
               # Try to run the binary with timeout

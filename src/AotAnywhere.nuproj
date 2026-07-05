@@ -36,6 +36,10 @@
       <Pack>true</Pack>
       <PackagePath>build</PackagePath>
     </None>
+    <None Include="objcopy_shim.zig">
+      <Pack>true</Pack>
+      <PackagePath>build</PackagePath>
+    </None>
     <None Include="apple-sysroot/**">
       <Pack>true</Pack>
       <PackagePath>build/apple-sysroot</PackagePath>
@@ -68,7 +72,7 @@
   </ItemGroup>
 
   <Target Name="BuildClangShims"
-          Inputs="clang_shim.zig;@(ShimTarget)"
+          Inputs="clang_shim.zig;objcopy_shim.zig;@(ShimTarget)"
           Outputs="@(ShimTarget->'$(ShimIntermediateDir)%(Identity)/%(Exe)')">
 
     <PropertyGroup>
