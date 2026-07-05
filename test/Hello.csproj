@@ -3,7 +3,12 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <!-- net8.0 is the package's supported floor. The armv7 targets publish as
+         net9.0 instead: their ILCompiler runtime packs only ship for .NET 9+,
+         and net8.0 fails restore for those RIDs outright (NETSDK1203) - which
+         also rules out multi-targeting here. -->
     <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework Condition="'$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.EndsWith('-arm'))">net9.0</TargetFramework>
     <PublishAot>true</PublishAot>
   </PropertyGroup>
 
