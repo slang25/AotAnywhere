@@ -68,7 +68,7 @@ jobs:
 
       - name: Open pull request with regenerated stubs
         if: steps.diff.outputs.drift == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: automation/apple-sysroot-drift
           commit-message: Regenerate Apple sysroot stubs for latest runtime packs
