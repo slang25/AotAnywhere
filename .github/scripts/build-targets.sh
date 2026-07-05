@@ -17,7 +17,24 @@ export PATH="$PWD/.rcodesign:$PATH"
 
 # The target groups run concurrently (parallel steps in
 # cross-platform-validation.yml), so up to three dotnet processes run at once on
-# this host. coreclr derives its shared-memory dir from $TMPDIR
+# this host. Anything they share and write to races; give each invocation its
+# own copy. The group id keys every per-invocation path below.
+group_id="${host_name}-$(echo "$2" | tr ',' '_')"
+
+# NuGet's global-packages folder (~/.nuget/packages) and HTTP cache are shared,
+# and concurrent restores race extracting the same packages into them - notably
+# the large Vezel zig toolset, which macOS re-extracts even when already present
+# - producing "Directory not empty", missing-temp-file, and http-cache
+# `.dat-new` errors. Serial pre-warming doesn't help (macOS still re-extracts),
+# so isolate the folders per group instead: nothing shared, no collision.
+# $RUNNER_TEMP is a native path on every host, so this is safe on Windows too,
+# and the cache step archives the whole $RUNNER_TEMP/nuget tree.
+nuget_root="${RUNNER_TEMP:-/tmp}/nuget/$group_id"
+export NUGET_PACKAGES="$nuget_root/packages"
+export NUGET_HTTP_CACHE_PATH="$nuget_root/http-cache"
+mkdir -p "$NUGET_PACKAGES" "$NUGET_HTTP_CACHE_PATH"
+
+# coreclr derives its shared-memory dir from $TMPDIR
 # ($TMPDIR/.dotnet/shm/session<id>, keyed on the login session, not the PID), so
 # the concurrent processes collide creating it and one fails with
 # `mkdir(...session<id>) == -1; errno == EEXIST`. Give each invocation its own
@@ -26,7 +43,7 @@ export PATH="$PWD/.rcodesign:$PATH"
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) ;;
   *)
-    TMPDIR="${RUNNER_TEMP:-/tmp}/dotnet-tmp/${host_name}-$(echo "$2" | tr ',' '_')"
+    TMPDIR="${RUNNER_TEMP:-/tmp}/dotnet-tmp/$group_id"
     mkdir -p "$TMPDIR"
     export TMPDIR
     ;;

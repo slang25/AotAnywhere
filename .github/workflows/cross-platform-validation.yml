@@ -158,11 +158,13 @@ jobs:
 
       # The publishes below restore the Vezel zig toolset for this host plus
       # ILCompiler/runtime packs for all eight target RIDs - several hundred
-      # MB from nuget.org on every run without this cache.
+      # MB from nuget.org on every run without this cache. build-targets.sh
+      # gives each concurrent group its own NuGet folders under
+      # $RUNNER_TEMP/nuget (see below), so cache that whole tree.
       - name: Cache NuGet packages
         uses: actions/cache@v6
         with:
-          path: ~/.nuget/packages
+          path: ${{ runner.temp }}/nuget
           key: nuget-publish-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/AotAnywhere.nuproj', 'src/Crosscompile.targets', 'test/Hello.csproj') }}
           restore-keys: |
             nuget-publish-${{ runner.os }}-${{ runner.arch }}-
