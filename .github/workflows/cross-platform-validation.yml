@@ -383,7 +383,7 @@ jobs:
       # time never eats into the per-binary execution timeout.
       - name: Set up QEMU for armv7
         if: matrix.qemu == true
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: arm
 
