@@ -10,7 +10,7 @@ on:
 env:
   # rcodesign (https://github.com/indygreg/apple-platform-rs) generates the
   # test signing certificate, signs macOS binaries during the build matrix
-  # (via the PublishAotCross signing properties) and verifies the results.
+  # (via the AotAnywhere signing properties) and verifies the results.
   # Deliberately NOT named RCODESIGN_*: rcodesign feeds env vars with that
   # prefix into its config loader and errors on unknown keys.
   APPLE_CODESIGN_VERSION: 0.29.0
@@ -34,7 +34,7 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - name: Build NuGet package (all host shims)
-        run: dotnet build -t:Pack src/PublishAotCross.nuproj
+        run: dotnet build -t:Pack src/AotAnywhere.nuproj
       - name: Upload prebuilt shims
         uses: actions/upload-artifact@v7
         with:
@@ -60,7 +60,7 @@ jobs:
           tar xzf apple-codesign-*.tar.gz --strip-components=1
           mkdir test-cert
           ./rcodesign generate-self-signed-certificate \
-            --person-name "PublishAotCross CI Test" \
+            --person-name "AotAnywhere CI Test" \
             --profile developer-id-application \
             --pem-filename test-cert/cert
           openssl pkcs12 -export -legacy \
@@ -118,7 +118,7 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       
-      # Drop the prebuilt shims where PublishAotCross.targets looks for them
+      # Drop the prebuilt shims where StuDev.AotAnywhere.targets looks for them
       # (src/shim/<host-rid>), so the publishes below use this host's prebuilt
       # shim instead of compiling one — required on hosts whose zig can't.
       - name: Download prebuilt shims
@@ -133,7 +133,7 @@ jobs:
           name: test-signing-cert
           path: test-cert
 
-      # The osx-x64 publishes below sign via the PublishAotCross rcodesign
+      # The osx-x64 publishes below sign via the AotAnywhere rcodesign
       # integration, so every build host needs rcodesign on PATH.
       - name: Install rcodesign
         shell: bash
@@ -182,8 +182,8 @@ jobs:
             
             # Determine if this is a cross-compilation or native build
             if [[ "$target" == linux-* ]]; then
-              echo "Cross-compiling to Linux target using PublishAotCross..."
-              # Build for Linux targets using PublishAotCross
+              echo "Cross-compiling to Linux target using AotAnywhere..."
+              # Build for Linux targets using AotAnywhere
               if dotnet publish test/Hello.csproj \
                 -r "$target" \
                 -c Release \
@@ -198,7 +198,7 @@ jobs:
                 build_result="failed"
               fi
             elif [[ "$target" == osx-* ]]; then
-              echo "Cross-compiling to macOS target using PublishAotCross..."
+              echo "Cross-compiling to macOS target using AotAnywhere..."
               # osx-x64 is signed with the throwaway CI certificate to
               # exercise the rcodesign signing integration from every host;
               # osx-arm64 is left with zig's default ad-hoc signature so that
@@ -212,11 +212,11 @@ jobs:
                   pass=$(cygpath -w "$pass")
                 fi
                 sign_args=(
-                  "-p:PublishAotCrossSignP12File=$p12"
-                  "-p:PublishAotCrossSignP12PasswordFile=$pass"
+                  "-p:AotAnywhereSignP12File=$p12"
+                  "-p:AotAnywhereSignP12PasswordFile=$pass"
                 )
               fi
-              # For macOS targets, use PublishAotCross for cross-compilation
+              # For macOS targets, use AotAnywhere for cross-compilation
               if dotnet publish test/Hello.csproj \
                 -r "$target" \
                 -c Release \
@@ -257,7 +257,7 @@ jobs:
 
                 # Assert the signing integration actually signed osx-x64
                 if [[ "$target" == "osx-x64" ]]; then
-                  if rcodesign print-signature-info "artifacts/${{ matrix.host-name }}/$target/$binary_name" | grep -q "PublishAotCross CI Test"; then
+                  if rcodesign print-signature-info "artifacts/${{ matrix.host-name }}/$target/$binary_name" | grep -q "AotAnywhere CI Test"; then
                     echo "✅ Signature check: signed with the CI test certificate"
                   else
                     echo "❌ Signature check: expected CI test certificate signature not found"
@@ -418,7 +418,7 @@ jobs:
                   echo "❌ FAIL - invalid code signature"
                   continue
                 fi
-                if [[ "$target" == "osx-x64" ]] && ! codesign -dvv "$binary_path" 2>&1 | grep -q "PublishAotCross CI Test"; then
+                if [[ "$target" == "osx-x64" ]] && ! codesign -dvv "$binary_path" 2>&1 | grep -q "AotAnywhere CI Test"; then
                   echo "❌ FAIL - not signed with the CI test certificate"
                   continue
                 fi
@@ -493,7 +493,7 @@ jobs:
       - name: Generate platform support matrix
         shell: bash
         run: |
-          echo "# 🏗️ PublishAotCross Platform Support Matrix" > platform-report.md
+          echo "# 🏗️ AotAnywhere Platform Support Matrix" > platform-report.md
           echo "" >> platform-report.md
           echo "This report shows the current status of cross-compilation support:" >> platform-report.md
           echo "" >> platform-report.md

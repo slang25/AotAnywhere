@@ -21,7 +21,7 @@
     <!-- The shim is always materialized into the intermediate dir (so we can
          guarantee the executable bit regardless of how the package was
          packed), and that dir is what we put on PATH for the ILC link. -->
-    <ClangShimDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'publishaotcross'))</ClangShimDir>
+    <ClangShimDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'aotanywhere'))</ClangShimDir>
     <ClangShimBinary Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(ClangShimDir)clang.exe</ClangShimBinary>
     <ClangShimBinary Condition="'$(ClangShimBinary)' == ''">$(ClangShimDir)clang</ClangShimBinary>
   </PropertyGroup>
@@ -59,17 +59,17 @@
        package ships a minimal, self-generated set covering exactly the
        symbols .NET's runtime packs reference; point the clang shim at it
        unless the user supplied their own sysroot (via the
-       PublishAotCrossAppleSysroot property or the environment variable). -->
+       AotAnywhereAppleSysroot property or the environment variable). -->
   <Target Name="SetAppleSysroot"
           BeforeTargets="SetupOSSpecificProps"
           Condition="$(RuntimeIdentifier.StartsWith('osx')) and !$([MSBuild]::IsOSPlatform('OSX'))">
 
     <PropertyGroup>
-      <PublishAotCrossAppleSysroot Condition="'$(PublishAotCrossAppleSysroot)' == ''">$(PUBLISHAOTCROSS_APPLE_SYSROOT)</PublishAotCrossAppleSysroot>
-      <PublishAotCrossAppleSysroot Condition="'$(PublishAotCrossAppleSysroot)' == ''">$(MSBuildThisFileDirectory)apple-sysroot</PublishAotCrossAppleSysroot>
+      <AotAnywhereAppleSysroot Condition="'$(AotAnywhereAppleSysroot)' == ''">$(AOTANYWHERE_APPLE_SYSROOT)</AotAnywhereAppleSysroot>
+      <AotAnywhereAppleSysroot Condition="'$(AotAnywhereAppleSysroot)' == ''">$(MSBuildThisFileDirectory)apple-sysroot</AotAnywhereAppleSysroot>
     </PropertyGroup>
 
-    <SetEnvVar Name="PUBLISHAOTCROSS_APPLE_SYSROOT" Value="$(PublishAotCrossAppleSysroot)" />
+    <SetEnvVar Name="AOTANYWHERE_APPLE_SYSROOT" Value="$(AotAnywhereAppleSysroot)" />
 
   </Target>
 
@@ -186,11 +186,11 @@
   <!-- zig leaves an ad-hoc code signature on macOS binaries, which runs
        locally but is not suitable for distribution. This re-signs the linked
        binary with a real identity, from any host:
-         - PublishAotCrossSignP12File / PublishAotCrossSignP12PasswordFile:
+         - AotAnywhereSignP12File / AotAnywhereSignP12PasswordFile:
            sign with a Developer ID certificate using rcodesign
            (https://github.com/indygreg/apple-platform-rs), works on
            Windows/Linux/macOS hosts
-         - PublishAotCrossCodesignIdentity: sign with Apple's codesign,
+         - AotAnywhereCodesignIdentity: sign with Apple's codesign,
            macOS hosts only (takes precedence there when both are set)
        Both paths apply the hardened-runtime flag and a secure timestamp so
        the result is ready for notarization. -->
@@ -199,43 +199,43 @@
           Condition="$(RuntimeIdentifier.StartsWith('osx'))">
 
     <PropertyGroup>
-      <PublishAotCrossRCodesignPath Condition="'$(PublishAotCrossRCodesignPath)' == ''">rcodesign</PublishAotCrossRCodesignPath>
+      <AotAnywhereRCodesignPath Condition="'$(AotAnywhereRCodesignPath)' == ''">rcodesign</AotAnywhereRCodesignPath>
 
       <_UseCodesign>false</_UseCodesign>
-      <_UseCodesign Condition="'$(PublishAotCrossCodesignIdentity)' != '' and $([MSBuild]::IsOSPlatform('OSX'))">true</_UseCodesign>
+      <_UseCodesign Condition="'$(AotAnywhereCodesignIdentity)' != '' and $([MSBuild]::IsOSPlatform('OSX'))">true</_UseCodesign>
       <_UseRCodesign>false</_UseRCodesign>
-      <_UseRCodesign Condition="'$(_UseCodesign)' != 'true' and '$(PublishAotCrossSignP12File)' != ''">true</_UseRCodesign>
+      <_UseRCodesign Condition="'$(_UseCodesign)' != 'true' and '$(AotAnywhereSignP12File)' != ''">true</_UseRCodesign>
 
       <!-- Timestamping needs a real certificate; skip it for the ad-hoc
-           identity so /p:PublishAotCrossCodesignIdentity=- also works. -->
+           identity so /p:AotAnywhereCodesignIdentity=- also works. -->
       <_CodesignTimestampArg>--timestamp</_CodesignTimestampArg>
-      <_CodesignTimestampArg Condition="'$(PublishAotCrossCodesignIdentity)' == '-'">--timestamp=none</_CodesignTimestampArg>
+      <_CodesignTimestampArg Condition="'$(AotAnywhereCodesignIdentity)' == '-'">--timestamp=none</_CodesignTimestampArg>
 
-      <_CodesignEntitlementsArg Condition="'$(PublishAotCrossEntitlements)' != ''">--entitlements &quot;$(PublishAotCrossEntitlements)&quot;</_CodesignEntitlementsArg>
+      <_CodesignEntitlementsArg Condition="'$(AotAnywhereEntitlements)' != ''">--entitlements &quot;$(AotAnywhereEntitlements)&quot;</_CodesignEntitlementsArg>
       <!-- -e is the stable alias: the long form was renamed from
            entitlements-xml-path to entitlements-xml-file across rcodesign releases. -->
-      <_RCodesignEntitlementsArg Condition="'$(PublishAotCrossEntitlements)' != ''">-e &quot;$(PublishAotCrossEntitlements)&quot;</_RCodesignEntitlementsArg>
+      <_RCodesignEntitlementsArg Condition="'$(AotAnywhereEntitlements)' != ''">-e &quot;$(AotAnywhereEntitlements)&quot;</_RCodesignEntitlementsArg>
     </PropertyGroup>
 
     <Message Importance="high"
-             Condition="'$(_UseCodesign)' != 'true' and '$(_UseRCodesign)' != 'true' and '$(PublishAotCrossCodesignIdentity)' == ''"
-             Text="PublishAotCross: the produced binary carries only an ad-hoc code signature. It runs locally, but to distribute it sign with a Developer ID certificate: set PublishAotCrossSignP12File (any host) or PublishAotCrossCodesignIdentity (macOS hosts). See the README for details." />
+             Condition="'$(_UseCodesign)' != 'true' and '$(_UseRCodesign)' != 'true' and '$(AotAnywhereCodesignIdentity)' == ''"
+             Text="AotAnywhere: the produced binary carries only an ad-hoc code signature. It runs locally, but to distribute it sign with a Developer ID certificate: set AotAnywhereSignP12File (any host) or AotAnywhereCodesignIdentity (macOS hosts). See the README for details." />
 
-    <Error Condition="'$(PublishAotCrossCodesignIdentity)' != '' and '$(_UseCodesign)' != 'true' and '$(_UseRCodesign)' != 'true'"
-           Text="PublishAotCrossCodesignIdentity uses Apple's codesign, which only exists on macOS hosts. On this host set PublishAotCrossSignP12File and PublishAotCrossSignP12PasswordFile to sign with rcodesign instead." />
-    <Error Condition="'$(_UseRCodesign)' == 'true' and !Exists('$(PublishAotCrossSignP12File)')"
-           Text="PublishAotCrossSignP12File '$(PublishAotCrossSignP12File)' does not exist." />
-    <Error Condition="'$(_UseRCodesign)' == 'true' and '$(PublishAotCrossSignP12PasswordFile)' == ''"
-           Text="Set PublishAotCrossSignP12PasswordFile to a file containing the .p12 password. It is a file (not a plain property) so the password does not end up in build logs; rcodesign would otherwise prompt for it and hang the build." />
-    <Error Condition="'$(_UseRCodesign)' == 'true' and '$(PublishAotCrossSignP12PasswordFile)' != '' and !Exists('$(PublishAotCrossSignP12PasswordFile)')"
-           Text="PublishAotCrossSignP12PasswordFile '$(PublishAotCrossSignP12PasswordFile)' does not exist." />
-    <Error Condition="'$(PublishAotCrossEntitlements)' != '' and !Exists('$(PublishAotCrossEntitlements)')"
-           Text="PublishAotCrossEntitlements '$(PublishAotCrossEntitlements)' does not exist." />
+    <Error Condition="'$(AotAnywhereCodesignIdentity)' != '' and '$(_UseCodesign)' != 'true' and '$(_UseRCodesign)' != 'true'"
+           Text="AotAnywhereCodesignIdentity uses Apple's codesign, which only exists on macOS hosts. On this host set AotAnywhereSignP12File and AotAnywhereSignP12PasswordFile to sign with rcodesign instead." />
+    <Error Condition="'$(_UseRCodesign)' == 'true' and !Exists('$(AotAnywhereSignP12File)')"
+           Text="AotAnywhereSignP12File '$(AotAnywhereSignP12File)' does not exist." />
+    <Error Condition="'$(_UseRCodesign)' == 'true' and '$(AotAnywhereSignP12PasswordFile)' == ''"
+           Text="Set AotAnywhereSignP12PasswordFile to a file containing the .p12 password. It is a file (not a plain property) so the password does not end up in build logs; rcodesign would otherwise prompt for it and hang the build." />
+    <Error Condition="'$(_UseRCodesign)' == 'true' and '$(AotAnywhereSignP12PasswordFile)' != '' and !Exists('$(AotAnywhereSignP12PasswordFile)')"
+           Text="AotAnywhereSignP12PasswordFile '$(AotAnywhereSignP12PasswordFile)' does not exist." />
+    <Error Condition="'$(AotAnywhereEntitlements)' != '' and !Exists('$(AotAnywhereEntitlements)')"
+           Text="AotAnywhereEntitlements '$(AotAnywhereEntitlements)' does not exist." />
 
     <!-- Probe for rcodesign first to fail with instructions instead of a
          cryptic 'command not found'. -->
     <Exec Condition="'$(_UseRCodesign)' == 'true'"
-          Command="&quot;$(PublishAotCrossRCodesignPath)&quot; --version"
+          Command="&quot;$(AotAnywhereRCodesignPath)&quot; --version"
           IgnoreExitCode="true"
           EchoOff="true"
           StandardOutputImportance="low"
@@ -243,21 +243,21 @@
       <Output TaskParameter="ExitCode" PropertyName="_RCodesignProbeExitCode" />
     </Exec>
     <Error Condition="'$(_UseRCodesign)' == 'true' and '$(_RCodesignProbeExitCode)' != '0'"
-           Text="rcodesign was not found at '$(PublishAotCrossRCodesignPath)'. Install it from https://github.com/indygreg/apple-platform-rs/releases (or 'cargo install apple-codesign'), or point PublishAotCrossRCodesignPath at the executable." />
+           Text="rcodesign was not found at '$(AotAnywhereRCodesignPath)'. Install it from https://github.com/indygreg/apple-platform-rs/releases (or 'cargo install apple-codesign'), or point AotAnywhereRCodesignPath at the executable." />
 
     <Message Importance="high" Condition="'$(_UseCodesign)' == 'true'"
-             Text="Signing $(NativeBinary) with codesign identity '$(PublishAotCrossCodesignIdentity)'" />
+             Text="Signing $(NativeBinary) with codesign identity '$(AotAnywhereCodesignIdentity)'" />
     <Exec Condition="'$(_UseCodesign)' == 'true'"
-          Command="codesign --force --options runtime $(_CodesignTimestampArg) $(_CodesignEntitlementsArg) --sign &quot;$(PublishAotCrossCodesignIdentity)&quot; &quot;$(NativeBinary)&quot;" />
+          Command="codesign --force --options runtime $(_CodesignTimestampArg) $(_CodesignEntitlementsArg) --sign &quot;$(AotAnywhereCodesignIdentity)&quot; &quot;$(NativeBinary)&quot;" />
 
     <Message Importance="high" Condition="'$(_UseRCodesign)' == 'true'"
-             Text="Signing $(NativeBinary) with rcodesign using '$(PublishAotCrossSignP12File)'" />
+             Text="Signing $(NativeBinary) with rcodesign using '$(AotAnywhereSignP12File)'" />
     <Exec Condition="'$(_UseRCodesign)' == 'true'"
-          Command="&quot;$(PublishAotCrossRCodesignPath)&quot; sign --p12-file &quot;$(PublishAotCrossSignP12File)&quot; --p12-password-file &quot;$(PublishAotCrossSignP12PasswordFile)&quot; --code-signature-flags runtime $(_RCodesignEntitlementsArg) &quot;$(NativeBinary)&quot;" />
+          Command="&quot;$(AotAnywhereRCodesignPath)&quot; sign --p12-file &quot;$(AotAnywhereSignP12File)&quot; --p12-password-file &quot;$(AotAnywhereSignP12PasswordFile)&quot; --code-signature-flags runtime $(_RCodesignEntitlementsArg) &quot;$(NativeBinary)&quot;" />
 
   </Target>
 
-  <!-- Opt-in notarization (PublishAotCrossNotarize=true): zips the signed
+  <!-- Opt-in notarization (AotAnywhereNotarize=true): zips the signed
        binary and submits it to Apple's notary service with rcodesign, waiting
        for the verdict. Needs an App Store Connect API key encoded with
        'rcodesign encode-app-store-connect-api-key' and a Developer ID
@@ -267,22 +267,22 @@
        be stapled. -->
   <Target Name="NotarizeMacOsBinary"
           AfterTargets="SignMacOsBinary"
-          Condition="$(RuntimeIdentifier.StartsWith('osx')) and '$(PublishAotCrossNotarize)' == 'true'">
+          Condition="$(RuntimeIdentifier.StartsWith('osx')) and '$(AotAnywhereNotarize)' == 'true'">
 
     <PropertyGroup>
-      <PublishAotCrossRCodesignPath Condition="'$(PublishAotCrossRCodesignPath)' == ''">rcodesign</PublishAotCrossRCodesignPath>
-      <_NotaryStagingDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'publishaotcross', 'notary'))</_NotaryStagingDir>
+      <AotAnywhereRCodesignPath Condition="'$(AotAnywhereRCodesignPath)' == ''">rcodesign</AotAnywhereRCodesignPath>
+      <_NotaryStagingDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'aotanywhere', 'notary'))</_NotaryStagingDir>
       <_NotaryZip>$(_NotaryStagingDir)$(TargetName).zip</_NotaryZip>
     </PropertyGroup>
 
-    <Error Condition="'$(PublishAotCrossSignP12File)' == '' and ('$(PublishAotCrossCodesignIdentity)' == '' or '$(PublishAotCrossCodesignIdentity)' == '-')"
-           Text="PublishAotCrossNotarize requires signing with a Developer ID certificate in the same publish; set PublishAotCrossSignP12File or PublishAotCrossCodesignIdentity. Apple rejects ad-hoc signed submissions." />
-    <Error Condition="'$(PublishAotCrossNotaryApiKeyFile)' == ''"
-           Text="Set PublishAotCrossNotaryApiKeyFile to an App Store Connect API key encoded with 'rcodesign encode-app-store-connect-api-key'." />
-    <Error Condition="'$(PublishAotCrossNotaryApiKeyFile)' != '' and !Exists('$(PublishAotCrossNotaryApiKeyFile)')"
-           Text="PublishAotCrossNotaryApiKeyFile '$(PublishAotCrossNotaryApiKeyFile)' does not exist." />
+    <Error Condition="'$(AotAnywhereSignP12File)' == '' and ('$(AotAnywhereCodesignIdentity)' == '' or '$(AotAnywhereCodesignIdentity)' == '-')"
+           Text="AotAnywhereNotarize requires signing with a Developer ID certificate in the same publish; set AotAnywhereSignP12File or AotAnywhereCodesignIdentity. Apple rejects ad-hoc signed submissions." />
+    <Error Condition="'$(AotAnywhereNotaryApiKeyFile)' == ''"
+           Text="Set AotAnywhereNotaryApiKeyFile to an App Store Connect API key encoded with 'rcodesign encode-app-store-connect-api-key'." />
+    <Error Condition="'$(AotAnywhereNotaryApiKeyFile)' != '' and !Exists('$(AotAnywhereNotaryApiKeyFile)')"
+           Text="AotAnywhereNotaryApiKeyFile '$(AotAnywhereNotaryApiKeyFile)' does not exist." />
 
-    <Exec Command="&quot;$(PublishAotCrossRCodesignPath)&quot; --version"
+    <Exec Command="&quot;$(AotAnywhereRCodesignPath)&quot; --version"
           IgnoreExitCode="true"
           EchoOff="true"
           StandardOutputImportance="low"
@@ -290,7 +290,7 @@
       <Output TaskParameter="ExitCode" PropertyName="_RCodesignNotaryProbeExitCode" />
     </Exec>
     <Error Condition="'$(_RCodesignNotaryProbeExitCode)' != '0'"
-           Text="rcodesign was not found at '$(PublishAotCrossRCodesignPath)'; it is required for notarization. Install it from https://github.com/indygreg/apple-platform-rs/releases (or 'cargo install apple-codesign'), or point PublishAotCrossRCodesignPath at the executable." />
+           Text="rcodesign was not found at '$(AotAnywhereRCodesignPath)'; it is required for notarization. Install it from https://github.com/indygreg/apple-platform-rs/releases (or 'cargo install apple-codesign'), or point AotAnywhereRCodesignPath at the executable." />
 
     <!-- Stage into a directory holding just the binary so the zip contains a
          single root entry. -->
@@ -300,7 +300,7 @@
     <ZipDirectory SourceDirectory="$(_NotaryStagingDir)bin" DestinationFile="$(_NotaryZip)" Overwrite="true" />
 
     <Message Importance="high" Text="Submitting $(NativeBinary) to Apple's notary service (this waits for the verdict and can take a few minutes)" />
-    <Exec Command="&quot;$(PublishAotCrossRCodesignPath)&quot; notary-submit --api-key-file &quot;$(PublishAotCrossNotaryApiKeyFile)&quot; --wait &quot;$(_NotaryZip)&quot;" />
+    <Exec Command="&quot;$(AotAnywhereRCodesignPath)&quot; notary-submit --api-key-file &quot;$(AotAnywhereNotaryApiKeyFile)&quot; --wait &quot;$(_NotaryZip)&quot;" />
     <Message Importance="high" Text="Notarization accepted. Distribute the binary as-is: Gatekeeper fetches the ticket online on first run (bare executables cannot be stapled)." />
 
   </Target>

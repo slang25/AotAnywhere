@@ -9,5 +9,5 @@
 
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
 
-  <Import Project="../src/PublishAotCross.targets" />
+  <Import Project="../src/StuDev.AotAnywhere.targets" />
 </Project>

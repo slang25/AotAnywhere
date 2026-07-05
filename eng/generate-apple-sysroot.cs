@@ -1,5 +1,5 @@
 #!/usr/bin/env dotnet
-// Generate the curated Apple .tbd stub sysroot shipped with PublishAotCross.
+// Generate the curated Apple .tbd stub sysroot shipped with AotAnywhere.
 //
 // .NET Native AOT binaries targeting macOS link against a handful of Apple
 // system libraries and frameworks. When cross-compiling from Linux or Windows

@@ -28,7 +28,7 @@ jobs:
       - name: Build (CI)
         if: ${{ github.event.inputs.version == '' }}
         run: |
-          dotnet build -t:Pack src/PublishAotCross.nuproj
+          dotnet build -t:Pack src/AotAnywhere.nuproj
           dotnet publish -r linux-x64 -c Release test/Hello.csproj -p:StripSymbols=false
       - name: Upload test binary
         if: ${{ github.event.inputs.version == '' }}
@@ -38,15 +38,15 @@ jobs:
           path: test/bin/Release/net8.0/linux-x64/publish/Hello
       - name: Build (CD)
         if: ${{ github.event.inputs.version != '' }}
-        run: dotnet build -t:Pack src/PublishAotCross.nuproj -p:Version=${{ github.event.inputs.version }}
+        run: dotnet build -t:Pack src/AotAnywhere.nuproj -p:Version=${{ github.event.inputs.version }}
       - name: Archive NuGet
         if: ${{ github.event.inputs.version != '' }}
         uses: actions/upload-artifact@v7
         with:
-          name: PublishAotCross.${{ github.event.inputs.version }}.nupkg
-          path: src/bin/Debug/PublishAotCross.${{ github.event.inputs.version }}.nupkg
+          name: StuDev.AotAnywhere.${{ github.event.inputs.version }}.nupkg
+          path: src/bin/Debug/StuDev.AotAnywhere.${{ github.event.inputs.version }}.nupkg
       - name: Create tag
-        if: ${{ github.event.inputs.version != '' && github.actor == 'MichalStrehovsky' }}
+        if: ${{ github.event.inputs.version != '' && github.actor == 'slang25' }}
         run: |
           git tag v${{ github.event.inputs.version }}
           git push origin v${{ github.event.inputs.version }}

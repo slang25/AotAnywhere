@@ -46,7 +46,7 @@ For each host-target combination:
 - Validates binary creation and uploads artifacts
 
 ### 3. macOS Code Signing
-A dedicated job generates a throwaway self-signed Developer ID-style certificate with rcodesign. Every build host then publishes `osx-x64` with the `PublishAotCrossSignP12File` properties set, exercising the package's rcodesign signing integration from Windows, Linux and macOS hosts; `osx-arm64` keeps zig's default ad-hoc signature so that path stays covered. The build job asserts the expected certificate is present with `rcodesign print-signature-info`.
+A dedicated job generates a throwaway self-signed Developer ID-style certificate with rcodesign. Every build host then publishes `osx-x64` with the `AotAnywhereSignP12File` properties set, exercising the package's rcodesign signing integration from Windows, Linux and macOS hosts; `osx-arm64` keeps zig's default ad-hoc signature so that path stays covered. The build job asserts the expected certificate is present with `rcodesign print-signature-info`.
 
 ### 4. Runtime Validation
 - Downloads build artifacts from all host platforms
@@ -72,7 +72,7 @@ The workflow can be triggered by:
 
 ## Expected Results
 
-The workflow validates that PublishAotCross successfully enables:
+The workflow validates that AotAnywhere successfully enables:
 - Cross-compilation from Windows/macOS to Linux and macOS
 - Support for both glibc and musl targets on Linux
 - Support for both x64 and ARM64 architectures

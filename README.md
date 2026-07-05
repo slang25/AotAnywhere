@@ -1,4 +1,4 @@
-# PublishAotCross
+# AotAnywhere
 
 This is a NuGet package with an MSBuild target to aid in crosscompilation with [PublishAot](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/). It helps resolving following error:
 
@@ -31,7 +31,7 @@ Things to know:
 - The stub symbol lists are generated from the .NET 8, 9, 10, and 11-preview runtime packs (`eng/generate-apple-sysroot.cs`). If a future .NET version references new Apple symbols, the link fails with an unresolved symbol until the stubs are regenerated.
 - Symbols are not stripped for macOS targets (`StripSymbols` defaults to `false` there): Apple's `strip`/`dsymutil` are unavailable on other hosts and reject zig-linked binaries anyway.
 - zig gives osx-arm64 binaries an ad-hoc code signature (Apple Silicon refuses to run entirely unsigned code); osx-x64 binaries are left unsigned. Either way that only covers running locally — for distribution you should sign (and if needed notarize) the result, which works from any host, no Mac required; see [Signing and notarizing macOS binaries](#signing-and-notarizing-macos-binaries) below.
-- To link against a real Apple SDK instead of the bundled stubs, set the `PublishAotCrossAppleSysroot` MSBuild property (or the `PUBLISHAOTCROSS_APPLE_SYSROOT` environment variable) to the SDK root.
+- To link against a real Apple SDK instead of the bundled stubs, set the `AotAnywhereAppleSysroot` MSBuild property (or the `AOTANYWHERE_APPLE_SYSROOT` environment variable) to the SDK root.
 
 ### Signing and notarizing macOS binaries
 
@@ -43,19 +43,19 @@ Export your "Developer ID Application" certificate and private key as a `.p12` f
 
 ```sh
 dotnet publish -r osx-arm64 \
-  /p:PublishAotCrossSignP12File=certificate.p12 \
-  /p:PublishAotCrossSignP12PasswordFile=certificate.password.txt
+  /p:AotAnywhereSignP12File=certificate.p12 \
+  /p:AotAnywhereSignP12PasswordFile=certificate.password.txt
 ```
 
-The freshly linked binary is re-signed in place with the hardened-runtime flag and a secure timestamp, so it is ready for notarization. This uses [rcodesign](https://github.com/indygreg/apple-platform-rs) and works on Windows, Linux and macOS hosts alike — install it from the GitHub releases (or `cargo install apple-codesign`), or point `PublishAotCrossRCodesignPath` at the executable if it is not on `PATH`.
+The freshly linked binary is re-signed in place with the hardened-runtime flag and a secure timestamp, so it is ready for notarization. This uses [rcodesign](https://github.com/indygreg/apple-platform-rs) and works on Windows, Linux and macOS hosts alike — install it from the GitHub releases (or `cargo install apple-codesign`), or point `AotAnywhereRCodesignPath` at the executable if it is not on `PATH`.
 
 On a macOS host you can use Apple's `codesign` with a keychain identity instead:
 
 ```sh
-dotnet publish -r osx-arm64 "/p:PublishAotCrossCodesignIdentity=Developer ID Application: Jane Doe (TEAMID)"
+dotnet publish -r osx-arm64 "/p:AotAnywhereCodesignIdentity=Developer ID Application: Jane Doe (TEAMID)"
 ```
 
-To embed entitlements with either flavor, set `/p:PublishAotCrossEntitlements=path/to/entitlements.plist`.
+To embed entitlements with either flavor, set `/p:AotAnywhereEntitlements=path/to/entitlements.plist`.
 
 Things to know:
 
@@ -75,10 +75,10 @@ Then either let the publish do everything — sign, zip, submit and wait for App
 
 ```sh
 dotnet publish -r osx-arm64 \
-  /p:PublishAotCrossSignP12File=certificate.p12 \
-  /p:PublishAotCrossSignP12PasswordFile=certificate.password.txt \
-  /p:PublishAotCrossNotarize=true \
-  /p:PublishAotCrossNotaryApiKeyFile=api-key.json
+  /p:AotAnywhereSignP12File=certificate.p12 \
+  /p:AotAnywhereSignP12PasswordFile=certificate.password.txt \
+  /p:AotAnywhereNotarize=true \
+  /p:AotAnywhereNotaryApiKeyFile=api-key.json
 ```
 
 or run the submission yourself after a signed publish:
@@ -88,7 +88,7 @@ zip hello.zip Hello
 rcodesign notary-submit --api-key-file api-key.json --wait hello.zip
 ```
 
-`PublishAotCrossNotarize` requires Developer ID signing in the same publish (Apple rejects ad-hoc submissions) and rcodesign, even when the signing itself was done with `PublishAotCrossCodesignIdentity`. Submission typically takes a minute or two; the publish fails if Apple rejects the binary.
+`AotAnywhereNotarize` requires Developer ID signing in the same publish (Apple rejects ad-hoc submissions) and rcodesign, even when the signing itself was done with `AotAnywhereCodesignIdentity`. Submission typically takes a minute or two; the publish fails if Apple rejects the binary.
 
 A bare executable cannot be stapled (stapling only works for bundles, disk images and installer packages), so just distribute the notarized binary — Gatekeeper fetches the notarization ticket online the first time it runs. If you ship a `.dmg` or `.pkg` instead, notarize that artifact and `rcodesign staple` it.
 
@@ -99,7 +99,11 @@ Note that only browser downloads get the quarantine attribute; binaries fetched 
 By default it relies on Zig provided by the unofficial [Vezel.Zig.Toolsets](https://github.com/vezel-dev/zig-toolsets) NuGet package. You can specify version of this package using the `ZigVersion` property. Instructions for using your own Zig binaries are near the end of this document.
 
 1. Optional: [download](https://releases.llvm.org/) LLVM. We only need llvm-objcopy executable so if you care about size, you can delete the rest. The executable needs to be on PATH. This step is optional and is required only to strip symbols (make the produced executables smaller). If you don't care about stripping symbols, you can skip it.
-2. To your project that is already using Native AOT, add a reference to this NuGet package.
+2. To your project that is already using Native AOT, add a reference to the [`StuDev.AotAnywhere`](https://www.nuget.org/packages/StuDev.AotAnywhere) NuGet package:
+
+    ```sh
+    dotnet add package StuDev.AotAnywhere
+    ```
 3. Publish for one of the newly available RIDs:
     * `dotnet publish -r linux-x64`
     * `dotnet publish -r linux-arm64`
@@ -146,7 +150,7 @@ Note: Using invariant globalization disables culture-specific formatting, sortin
 
 Cross-compilation works by putting a small `clang` shim on `PATH` that rewrites the linker invocation and forwards it to `zig cc`. The package ships this shim **prebuilt** for the common host RIDs (Windows x86/x64, macOS x64/arm64, Linux x64/arm64) under `build/shim/<host-rid>`, so a normal build just copies it and does no compilation. On any other host the shim is compiled on demand from the bundled `clang_shim.zig` with the Zig toolchain. Pass `/p:UsePrebuiltClangShim=false` to force the compile-on-demand path.
 
-The prebuilt shims are cross-compiled from a single machine at pack time (see `BuildClangShims` in `PublishAotCross.nuproj`); Zig makes producing all host binaries from one host trivial.
+The prebuilt shims are cross-compiled from a single machine at pack time (see `BuildClangShims` in `AotAnywhere.nuproj`); Zig makes producing all host binaries from one host trivial.
 
 ### Using your own Zig
 

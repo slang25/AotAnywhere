@@ -9,12 +9,12 @@
     <PackHostRuntimeIdentifier Condition="'$(PackHostRuntimeIdentifier)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</PackHostRuntimeIdentifier>
     <ShimIntermediateDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(BaseIntermediateOutputPath)', 'shim'))</ShimIntermediateDir>
 
-    <PackageId>PublishAotCross</PackageId>
+    <PackageId>StuDev.AotAnywhere</PackageId>
     <Version Condition="'$(Version)' == ''">42.42.42-dev</Version>
-    <Authors>Michal Strehovsky</Authors>
-    <Company>Michal Strehovsky</Company>
-    <Description>MSBuild targets to aid in crosscompiling Native AOT publishing.</Description>
-    <PackageProjectUrl>https://github.com/MichalStrehovsky/PublishAotCross</PackageProjectUrl>
+    <Authors>Stuart Lang</Authors>
+    <Company>Stuart Lang</Company>
+    <Description>MSBuild targets to aid in crosscompiling Native AOT publishing. Publish native AOT binaries for Linux and macOS targets from any host (Windows, macOS, Linux) using Zig as the linker. Based on PublishAotCross by Michal Strehovsky.</Description>
+    <PackageProjectUrl>https://github.com/slang25/AotAnywhere</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
 
@@ -24,7 +24,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="PublishAotCross.targets">
+    <None Include="StuDev.AotAnywhere.targets">
       <Pack>true</Pack>
       <PackagePath>build</PackagePath>
     </None>
