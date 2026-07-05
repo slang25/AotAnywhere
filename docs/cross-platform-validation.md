@@ -12,8 +12,10 @@ This repository includes a comprehensive GitHub Actions workflow (`cross-platfor
 ### Target Platforms
 - `linux-x64`
 - `linux-arm64`
+- `linux-arm` (armv7, published as `net9.0` — ILCompiler packs for armv7 only ship for .NET 9+)
 - `linux-musl-x64`
 - `linux-musl-arm64`
+- `linux-musl-arm` (armv7, published as `net9.0`)
 - `osx-x64`
 - `osx-arm64`
 
@@ -28,13 +30,9 @@ strategy:
     include:
       - host: windows-latest
         host-name: windows
-        targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
-      - host: macos-13
-        host-name: macos-x64
-        targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
-      - host: macos-latest
-        host-name: macos-arm64
-        targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
+        targets: "linux-x64,linux-arm64,linux-arm,linux-musl-x64,linux-musl-arm64,linux-musl-arm,osx-x64,osx-arm64"
+      # ... same target list from ubuntu-latest, ubuntu-24.04-arm,
+      # macos-15-intel and macos-latest hosts
 ```
 
 ### 2. Build Process
@@ -50,8 +48,9 @@ A dedicated job generates a throwaway self-signed Developer ID-style certificate
 
 ### 4. Runtime Validation
 - Downloads build artifacts from all host platforms
-- Tests x64 binaries on Ubuntu (can't test ARM64 on x64 runners)
-- Tests macOS binaries on appropriate macOS runners (x64 on macos-13, ARM64 on macos-latest)
+- Tests x64 binaries on Ubuntu x64 and ARM64 binaries on Ubuntu ARM64 runners
+- Tests ARMv7 binaries under QEMU on the x64 runner, inside `linux/arm/v7` containers (Debian for the glibc target, Alpine for musl) — there is no hosted armv7 runner, and the hosted arm64 runners dropped 32-bit execution
+- Tests macOS binaries on appropriate macOS runners (x64 on macos-15-intel, ARM64 on macos-latest)
 - On macOS runners, verifies code signatures with `codesign --verify --strict` (and checks the `osx-x64` binaries carry the CI test certificate) before running
 - Verifies "Hello World" output
 - Reports success/failure rates
@@ -75,13 +74,12 @@ The workflow can be triggered by:
 The workflow validates that AotAnywhere successfully enables:
 - Cross-compilation from Windows/macOS to Linux and macOS
 - Support for both glibc and musl targets on Linux
-- Support for both x64 and ARM64 architectures
+- Support for x64, ARM64 and ARMv7 architectures
 - Functional binaries that run correctly on target platforms
 
 ## Limitations
 
-- ARM64 binaries cannot be runtime-tested on x64 GitHub runners
-- Cross-architecture testing (e.g., ARM64 binaries on x64 runners) is not supported
+- ARMv7 runtime testing happens under QEMU user emulation, not real hardware
 - Network connectivity required for downloading Zig toolchain
 - Build time varies significantly based on platform and target
 

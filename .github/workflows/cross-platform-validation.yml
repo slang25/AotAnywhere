@@ -84,39 +84,44 @@ jobs:
           # Windows host builds
           - host: windows-latest
             host-name: windows
-            targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
+            targets: "linux-x64,linux-arm64,linux-arm,linux-musl-x64,linux-musl-arm64,linux-musl-arm,osx-x64,osx-arm64"
           
           # Linux host builds
           - host: ubuntu-latest
             host-name: linux
-            targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
+            targets: "linux-x64,linux-arm64,linux-arm,linux-musl-x64,linux-musl-arm64,linux-musl-arm,osx-x64,osx-arm64"
           
           # macOS x64 host builds
           - host: macos-15-intel
             host-name: macos-x64
-            targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
+            targets: "linux-x64,linux-arm64,linux-arm,linux-musl-x64,linux-musl-arm64,linux-musl-arm,osx-x64,osx-arm64"
           
           # macOS ARM64 host builds
           - host: macos-latest
             host-name: macos-arm64
-            targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
+            targets: "linux-x64,linux-arm64,linux-arm,linux-musl-x64,linux-musl-arm64,linux-musl-arm,osx-x64,osx-arm64"
 
           # Linux ARM64 host builds
           - host: ubuntu-24.04-arm
             host-name: linux-arm64
-            targets: "linux-x64,linux-arm64,linux-musl-x64,linux-musl-arm64,osx-x64,osx-arm64"
+            targets: "linux-x64,linux-arm64,linux-arm,linux-musl-x64,linux-musl-arm64,linux-musl-arm,osx-x64,osx-arm64"
 
     runs-on: ${{ matrix.host }}
     name: Build from ${{ matrix.host-name }}
-    
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v7
-      
+
+      # SDK 9 is needed on top of 8 because the armv7 targets publish as
+      # net9.0 (their ILCompiler runtime packs only ship for .NET 9+); the
+      # other targets keep exercising the net8.0 floor.
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: |
+            8.0.x
+            9.0.x
       
       # Drop the prebuilt shims where StuDev.AotAnywhere.targets looks for them
       # (src/shim/<host-rid>), so the publishes below use this host's prebuilt
@@ -327,6 +332,16 @@ jobs:
             runner-name: ubuntu-arm64
             test-targets: "linux-arm64,linux-musl-arm64"
             host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
+          # Test ARMv7 binaries under QEMU on Ubuntu x64: there is no hosted
+          # armv7 runner, and the hosted arm64 runners (Cobalt 100) dropped
+          # 32-bit AArch32 execution, so emulation is the only option. The
+          # binaries run inside linux/arm/v7 containers - Debian for the
+          # glibc target (it needs an armhf userland), Alpine for musl.
+          - runner: ubuntu-latest
+            runner-name: ubuntu-armv7-qemu
+            test-targets: "linux-arm,linux-musl-arm"
+            host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
+            qemu: true
           # Test macOS binaries on macOS x64
           - runner: macos-15-intel
             runner-name: macos-x64
@@ -344,7 +359,22 @@ jobs:
     steps:
       - name: Download all build artifacts
         uses: actions/download-artifact@v8
-      
+
+      # Registers qemu-user binfmt handlers so docker can run linux/arm/v7
+      # containers on the x64 runner. Images are pulled up front so the pull
+      # time never eats into the per-binary execution timeout.
+      - name: Set up QEMU for armv7
+        if: matrix.qemu == true
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+
+      - name: Pre-pull armv7 test images
+        if: matrix.qemu == true
+        run: |
+          docker pull --platform linux/arm/v7 debian:bookworm-slim
+          docker pull --platform linux/arm/v7 alpine:3.21
+
       - name: Test binaries from all host platforms
         shell: bash
         run: |
@@ -369,6 +399,20 @@ jobs:
           else
             run_with_timeout() { perl -e 'alarm shift; exec @ARGV' 10 "$@"; }
           fi
+
+          # armv7 binaries execute inside arm/v7 containers via the QEMU
+          # binfmt handlers registered above; everything else runs natively.
+          # Emulation is slow, so the container path gets a longer timeout.
+          run_binary() {
+            if [[ "${{ matrix.qemu }}" == "true" ]]; then
+              local image="debian:bookworm-slim"
+              [[ "$1" == */linux-musl-*/* ]] && image="alpine:3.21"
+              timeout 120s docker run --rm --platform linux/arm/v7 \
+                -v "$PWD:/work" -w /work "$image" "/work/$1"
+            else
+              run_with_timeout "$1"
+            fi
+          }
           
           success_count=0
           total_count=0
@@ -461,7 +505,7 @@ jobs:
 
               # Try to run the binary with timeout
               echo -n "  Execution test: "
-              if run_with_timeout "$binary_path" > /tmp/output.txt 2>&1; then
+              if run_binary "$binary_path" > /tmp/output.txt 2>&1; then
                 output=$(cat /tmp/output.txt)
                 if [[ "$output" == "Hello World" ]]; then
                   echo "✅ SUCCESS - Output: '$output'"
@@ -571,7 +615,7 @@ jobs:
           echo "| Target Platform | Windows Host | Linux Host | macOS x64 Host | macOS ARM64 Host | Linux ARM64 Host | Runtime Validation |" >> platform-report.md
           echo "|-----------------|--------------|------------|----------------|------------------|------------------|-------------------|" >> platform-report.md
 
-          for target in linux-x64 linux-arm64 linux-musl-x64 linux-musl-arm64 osx-x64 osx-arm64; do
+          for target in linux-x64 linux-arm64 linux-arm linux-musl-x64 linux-musl-arm64 linux-musl-arm osx-x64 osx-arm64; do
             win_status="❌"
             linux_status="❌"
             mac_x64_status="❌"
@@ -636,8 +680,8 @@ jobs:
           echo "## Additional Notes" >> platform-report.md
           echo "- This matrix shows cross-compilation capabilities from different host platforms" >> platform-report.md
           echo "- Builds run from x64 and ARM64 Windows, Linux, and macOS hosts" >> platform-report.md
-          echo "- Runtime validation covers Linux (x64 and ARM64) and macOS (x64 and ARM64) targets on matching hosted runners" >> platform-report.md
-          echo "- All builds use .NET 8.0 with Native AOT and Zig for cross-compilation" >> platform-report.md
+          echo "- Runtime validation covers Linux (x64 and ARM64) and macOS (x64 and ARM64) targets on matching hosted runners; ARMv7 targets run under QEMU in arm/v7 containers" >> platform-report.md
+          echo "- All builds use .NET 8.0 with Native AOT and Zig for cross-compilation, except the ARMv7 targets which use .NET 9.0 (their ILCompiler packs only ship for .NET 9+)" >> platform-report.md
           echo "" >> platform-report.md
           echo "Generated on: $(date -u)" >> platform-report.md
           

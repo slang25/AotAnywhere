@@ -7,7 +7,7 @@ $ dotnet publish -r linux-x64
 Microsoft.NETCore.Native.Publish.targets(59,5): error : Cross-OS native compilation is not supported.
 ```
 
-This NuGet package allows using [Zig](https://ziglang.org/) as the linker/sysroot to allow crosscompiling to linux-x64/linux-arm64/linux-musl-x64/linux-musl-arm64 from Windows and macOS machines.
+This NuGet package allows using [Zig](https://ziglang.org/) as the linker/sysroot to allow crosscompiling to linux-x64/linux-arm64/linux-arm/linux-musl-x64/linux-musl-arm64/linux-musl-arm from Windows and macOS machines.
 
 ## Supported Host Platforms
 
@@ -106,8 +106,12 @@ By default it relies on Zig provided by the unofficial [Vezel.Zig.Toolsets](http
 2. Publish for one of the newly available RIDs:
     * `dotnet publish -r linux-x64`
     * `dotnet publish -r linux-arm64`
+    * `dotnet publish -r linux-arm` (requires .NET 9+)
     * `dotnet publish -r linux-musl-x64`
     * `dotnet publish -r linux-musl-arm64`
+    * `dotnet publish -r linux-musl-arm` (requires .NET 9+)
+
+   The armv7 targets (`linux-arm`, `linux-musl-arm`) need a `net9.0` or later target framework: .NET only ships ILCompiler runtime packs for them from .NET 9 onwards.
 
 No other tools are needed. That includes symbol stripping (`StripSymbols` defaults to `true` for Linux targets): the shim doubles as `llvm-objcopy` and performs the strip, the `.dbg` symbol sidecar and the `.gnu_debuglink` itself, so no LLVM install is required. The `.dbg` sidecar it produces is a full copy of the unstripped binary — larger than llvm-objcopy's, but debuggers consume it the same way via the debug link.
 
@@ -160,6 +164,6 @@ Even though Zig allows crosscompiling for Windows as well, it's not possible to 
 
 ## Cross-Platform Validation
 
-This repository includes a comprehensive GitHub Actions workflow that validates cross-compilation support across different host and target platforms. The workflow tests building from Windows and macOS hosts to all supported Linux targets (x64, ARM64, glibc, musl) and validates that the produced binaries run correctly.
+This repository includes a comprehensive GitHub Actions workflow that validates cross-compilation support across different host and target platforms. The workflow tests building from Windows and macOS hosts to all supported Linux targets (x64, ARM64, ARMv7, glibc, musl) and validates that the produced binaries run correctly (natively on hosted runners, or under QEMU in arm/v7 containers for the ARMv7 targets).
 
 See [docs/cross-platform-validation.md](docs/cross-platform-validation.md) for detailed information about the validation process and platform support matrix.

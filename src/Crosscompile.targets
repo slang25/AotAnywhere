@@ -173,10 +173,17 @@
       <CrossCompileArch />
       <CrossCompileArch Condition="$(CrossCompileRid.EndsWith('-x64'))">x86_64</CrossCompileArch>
       <CrossCompileArch Condition="$(CrossCompileRid.EndsWith('-arm64'))">aarch64</CrossCompileArch>
+      <CrossCompileArch Condition="$(CrossCompileRid.EndsWith('-arm'))">arm</CrossCompileArch>
+
+      <!-- armv7 (linux-arm, linux-musl-arm) uses the hard-float ABI, which
+           the triple carries as a suffix: arm-linux-gnueabihf /
+           arm-linux-musleabihf. The 64-bit triples have no such suffix. -->
+      <CrossCompileAbiSuffix />
+      <CrossCompileAbiSuffix Condition="'$(CrossCompileArch)' == 'arm'">eabihf</CrossCompileAbiSuffix>
 
       <TargetTriple />
-      <TargetTriple Condition="'$(CrossCompileArch)' != '' and $(CrossCompileRid.StartsWith('linux'))">$(CrossCompileArch)-linux-gnu</TargetTriple>
-      <TargetTriple Condition="'$(CrossCompileArch)' != '' and ($(CrossCompileRid.StartsWith('linux-musl')) or $(CrossCompileRid.StartsWith('alpine')))">$(CrossCompileArch)-linux-musl</TargetTriple>
+      <TargetTriple Condition="'$(CrossCompileArch)' != '' and $(CrossCompileRid.StartsWith('linux'))">$(CrossCompileArch)-linux-gnu$(CrossCompileAbiSuffix)</TargetTriple>
+      <TargetTriple Condition="'$(CrossCompileArch)' != '' and ($(CrossCompileRid.StartsWith('linux-musl')) or $(CrossCompileRid.StartsWith('alpine')))">$(CrossCompileArch)-linux-musl$(CrossCompileAbiSuffix)</TargetTriple>
       <TargetTriple Condition="'$(CrossCompileArch)' != '' and $(CrossCompileRid.StartsWith('osx'))">$(CrossCompileArch)-macos</TargetTriple>
 
       <!-- Apple's strip/dsymutil reject zig-linked binaries (and don't exist
