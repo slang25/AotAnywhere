@@ -7,8 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version to create'     
+        description: 'Release version to create'
         required: true
+
+# A new push to the same PR supersedes the running build; release dispatches
+# are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build_and_test:
@@ -25,6 +31,15 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
+      # Pack restores the Vezel zig toolset and the publish pulls the
+      # linux-x64 ILCompiler/runtime packs - both sizeable downloads.
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-ci-${{ runner.os }}-${{ hashFiles('src/AotAnywhere.nuproj', 'src/Crosscompile.targets', 'test/Hello.csproj') }}
+          restore-keys: |
+            nuget-ci-${{ runner.os }}-
       - name: Build (CI)
         if: ${{ github.event.inputs.version == '' }}
         shell: bash
