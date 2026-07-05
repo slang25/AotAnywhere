@@ -1,6 +1,12 @@
 //! clang_shim.zig - Wrapper that redirects clang invocations to 'zig cc',
 //! adjusting arguments for native compilation and cross-compilation.
 //!
+//! This is a multi-call binary: Crosscompile.targets materializes the same
+//! executable as both `clang` and `llvm-objcopy`, and it dispatches on the
+//! name it was invoked as. The objcopy personality (objcopy_shim.zig) covers
+//! the symbol stripping the ILC targets perform for Linux targets, so
+//! StripSymbols works with no LLVM install.
+//!
 //! Crosscompile.targets compiles this on demand with the zig toolchain the
 //! package already provides, so no prebuilt binaries need to ship and the
 //! same logic runs on every host OS. The source must compile with the zig
@@ -15,6 +21,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const objcopy_shim = @import("objcopy_shim.zig");
 
 const host_is_macos = builtin.os.tag == .macos;
 
@@ -38,6 +45,9 @@ pub fn main(init: std.process.Init) !void {
         say("[DEBUG] Original args:", .{});
         for (args) |arg| say("  '{s}'", .{arg});
     }
+
+    if (argv.len > 0 and isObjcopyInvocation(argv[0]))
+        objcopy_shim.run(arena, io, args);
 
     var out: Args = .empty;
     try out.appendSlice(arena, &.{ "zig", "cc" });
@@ -82,6 +92,19 @@ pub fn main(init: std.process.Init) !void {
     runZigCc(io, out.items);
 }
 
+/// True when the multi-call binary was invoked under an objcopy name
+/// (llvm-objcopy, objcopy, llvm-objcopy.exe, any path or casing), in which
+/// case it acts as an ELF strip tool instead of a clang wrapper.
+fn isObjcopyInvocation(argv0: []const u8) bool {
+    const base = if (std.mem.lastIndexOfAny(u8, argv0, "/\\")) |sep| argv0[sep + 1 ..] else argv0;
+    if (base.len < "objcopy".len) return false;
+    var i: usize = 0;
+    while (i + "objcopy".len <= base.len) : (i += 1) {
+        if (std.ascii.eqlIgnoreCase(base[i..][0.."objcopy".len], "objcopy")) return true;
+    }
+    return false;
+}
+
 /// True for invocations that only query the toolchain and produce no
 /// compile or link output.
 fn isQueryInvocation(args: []const []const u8) bool {
@@ -109,11 +132,11 @@ fn detectMacosTarget(args: []const []const u8) bool {
 /// shim passes them explicitly instead. -dead_strip_dylibs drops the ones
 /// (and any other library) the binary ends up not referencing.
 const swift_overlay_args = [_][]const u8{
-    "-Wl,-dead_strip_dylibs",   "-lswiftCoreFoundation", "-lswiftDarwin",
-    "-lswiftDispatch",          "-lswiftIOKit",          "-lswiftObjectiveC",
-    "-lswiftXPC",               "-lswift_Builtin_float", "-lswift_errno",
-    "-lswift_math",             "-lswift_signal",        "-lswift_stdio",
-    "-lswift_time",             "-lswiftsys_time",       "-lswiftunistd",
+    "-Wl,-dead_strip_dylibs", "-lswiftCoreFoundation", "-lswiftDarwin",
+    "-lswiftDispatch",        "-lswiftIOKit",          "-lswiftObjectiveC",
+    "-lswiftXPC",             "-lswift_Builtin_float", "-lswift_errno",
+    "-lswift_math",           "-lswift_signal",        "-lswift_stdio",
+    "-lswift_time",           "-lswiftsys_time",       "-lswiftunistd",
 };
 
 /// True for link invocations of a .NET Native AOT binary targeting macOS.
@@ -345,6 +368,23 @@ fn reportSpawnError(err: anyerror) void {
 
 const testing = std.testing;
 
+test {
+    _ = objcopy_shim; // include the objcopy personality's tests
+}
+
+test "objcopy invocations are detected by executable name" {
+    try testing.expect(isObjcopyInvocation("llvm-objcopy"));
+    try testing.expect(isObjcopyInvocation("objcopy"));
+    try testing.expect(isObjcopyInvocation("/usr/local/bin/llvm-objcopy"));
+    try testing.expect(isObjcopyInvocation("C:\\tools\\llvm-objcopy.exe"));
+    try testing.expect(isObjcopyInvocation("LLVM-OBJCOPY.EXE"));
+    try testing.expect(!isObjcopyInvocation("clang"));
+    try testing.expect(!isObjcopyInvocation("/usr/bin/clang"));
+    try testing.expect(!isObjcopyInvocation("clang.exe"));
+    // A directory containing "objcopy" must not trip the check.
+    try testing.expect(!isObjcopyInvocation("/opt/llvm-objcopy-tools/clang"));
+}
+
 fn expectArgs(expected: []const []const u8, actual: []const []const u8) !void {
     try testing.expectEqual(expected.len, actual.len);
     for (expected, actual) |e, a| try testing.expectEqualStrings(e, a);
@@ -468,11 +508,11 @@ test "swift overlay libs are added when the swift runtime is linked" {
     var native: Args = .empty;
     try processMacosNative(arena, &native, &.{ "-lswiftCore", "-o", "hello", "main.o" }, "/sdkroot");
     try expectArgs(&(.{
-        "-isysroot",           "/sdkroot",
-        "-L/sdkroot/usr/lib",  "-L/sdkroot/usr/lib/swift",
-        "-F/sdkroot/System/Library/Frameworks",
-        "-lswiftCore",         "-o",
-        "hello",               "main.o",
+        "-isysroot",                            "/sdkroot",
+        "-L/sdkroot/usr/lib",                   "-L/sdkroot/usr/lib/swift",
+        "-F/sdkroot/System/Library/Frameworks", "-lswiftCore",
+        "-o",                                   "hello",
+        "main.o",
     } ++ swift_overlay_args), native.items);
 }
 

@@ -27,9 +27,14 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Build (CI)
         if: ${{ github.event.inputs.version == '' }}
+        shell: bash
         run: |
           dotnet build -t:Pack src/AotAnywhere.nuproj
-          dotnet publish -r linux-x64 -c Release test/Hello.csproj -p:StripSymbols=false
+          # Default publish: StripSymbols=true for Linux targets, served by
+          # the shim's llvm-objcopy personality (no LLVM on the runner).
+          dotnet publish -r linux-x64 -c Release test/Hello.csproj
+          # The strip pipeline must have produced the symbol sidecar.
+          test -f test/bin/Release/net8.0/linux-x64/publish/Hello.dbg
       - name: Upload test binary
         if: ${{ github.event.inputs.version == '' }}
         uses: actions/upload-artifact@v7
@@ -65,6 +70,12 @@ jobs:
           # than hardcoding ./Hello/Hello.
           bin=$(find . -type f -name Hello | head -1)
           if [ -z "$bin" ]; then echo "Hello binary not found" >&2; exit 1; fi
+          # The binary was stripped by the shim's llvm-objcopy personality;
+          # check binutils can parse the rewritten section table and that
+          # the strip actually happened, then run it.
+          readelf -S "$bin" > sections.txt
+          grep -q '\.gnu_debuglink' sections.txt
+          if grep -qE '\.symtab|\.debug_info' sections.txt; then echo "strip failed: symbol/debug sections still present" >&2; exit 1; fi
           echo "Launching $bin"
           chmod +x "$bin"
           "$bin"

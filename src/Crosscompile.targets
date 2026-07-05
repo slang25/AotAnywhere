@@ -24,6 +24,13 @@
     <ClangShimDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'aotanywhere'))</ClangShimDir>
     <ClangShimBinary Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(ClangShimDir)clang.exe</ClangShimBinary>
     <ClangShimBinary Condition="'$(ClangShimBinary)' == ''">$(ClangShimDir)clang</ClangShimBinary>
+
+    <!-- The shim is a multi-call binary: materialized a second time as
+         llvm-objcopy it performs the ELF symbol stripping the ILC targets
+         run for Linux targets, so StripSymbols=true (the default there)
+         works with no LLVM install. -->
+    <ObjCopyShimBinary Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(ClangShimDir)llvm-objcopy.exe</ObjCopyShimBinary>
+    <ObjCopyShimBinary Condition="'$(ObjCopyShimBinary)' == ''">$(ClangShimDir)llvm-objcopy</ObjCopyShimBinary>
   </PropertyGroup>
 
   <ItemGroup>
@@ -100,11 +107,11 @@
           Condition="'$(UsePrebuiltClangShim)' == 'true'"
           BeforeTargets="SetupOSSpecificProps"
           Inputs="$(PrebuiltClangShim)"
-          Outputs="$(ClangShimBinary)">
+          Outputs="$(ClangShimBinary);$(ObjCopyShimBinary)">
 
     <MakeDir Directories="$(ClangShimDir)" />
-    <Copy SourceFiles="$(PrebuiltClangShim)" DestinationFiles="$(ClangShimBinary)" OverwriteReadOnlyFiles="true" />
-    <Exec Condition="!$([MSBuild]::IsOSPlatform('Windows'))" Command="chmod +x &quot;$(ClangShimBinary)&quot;" />
+    <Copy SourceFiles="$(PrebuiltClangShim);$(PrebuiltClangShim)" DestinationFiles="$(ClangShimBinary);$(ObjCopyShimBinary)" OverwriteReadOnlyFiles="true" />
+    <Exec Condition="!$([MSBuild]::IsOSPlatform('Windows'))" Command="chmod +x &quot;$(ClangShimBinary)&quot; &quot;$(ObjCopyShimBinary)&quot;" />
 
   </Target>
 
@@ -113,11 +120,13 @@
           Condition="'$(UsePrebuiltClangShim)' != 'true'"
           DependsOnTargets="SetPathToZig"
           BeforeTargets="SetupOSSpecificProps"
-          Inputs="$(ClangShimSource)"
-          Outputs="$(ClangShimBinary)">
+          Inputs="$(ClangShimSource);$(MSBuildThisFileDirectory)objcopy_shim.zig"
+          Outputs="$(ClangShimBinary);$(ObjCopyShimBinary)">
 
     <MakeDir Directories="$(ClangShimDir)" />
     <Exec Command="zig build-exe -O ReleaseSafe -femit-bin=&quot;$(ClangShimBinary)&quot; &quot;$(ClangShimSource)&quot;" />
+    <Copy SourceFiles="$(ClangShimBinary)" DestinationFiles="$(ObjCopyShimBinary)" OverwriteReadOnlyFiles="true" />
+    <Exec Condition="!$([MSBuild]::IsOSPlatform('Windows'))" Command="chmod +x &quot;$(ObjCopyShimBinary)&quot;" />
 
   </Target>
 

@@ -98,19 +98,18 @@ Note that only browser downloads get the quarantine attribute; binaries fetched 
 
 By default it relies on Zig provided by the unofficial [Vezel.Zig.Toolsets](https://github.com/vezel-dev/zig-toolsets) NuGet package. You can specify version of this package using the `ZigVersion` property. Instructions for using your own Zig binaries are near the end of this document.
 
-1. Optional: [download](https://releases.llvm.org/) LLVM. We only need llvm-objcopy executable so if you care about size, you can delete the rest. The executable needs to be on PATH. This step is optional and is required only to strip symbols (make the produced executables smaller). If you don't care about stripping symbols, you can skip it.
-2. To your project that is already using Native AOT, add a reference to the [`StuDev.AotAnywhere`](https://www.nuget.org/packages/StuDev.AotAnywhere) NuGet package:
+1. To your project that is already using Native AOT, add a reference to the [`StuDev.AotAnywhere`](https://www.nuget.org/packages/StuDev.AotAnywhere) NuGet package:
 
     ```sh
     dotnet add package StuDev.AotAnywhere
     ```
-3. Publish for one of the newly available RIDs:
+2. Publish for one of the newly available RIDs:
     * `dotnet publish -r linux-x64`
     * `dotnet publish -r linux-arm64`
     * `dotnet publish -r linux-musl-x64`
     * `dotnet publish -r linux-musl-arm64`
 
-    If you skipped the second optional step to download llvm-objcopy, you must also pass `/p:StripSymbols=false` to the publish command, or you'll see an error instructing you to do that.
+No other tools are needed. That includes symbol stripping (`StripSymbols` defaults to `true` for Linux targets): the shim doubles as `llvm-objcopy` and performs the strip, the `.dbg` symbol sidecar and the `.gnu_debuglink` itself, so no LLVM install is required. The `.dbg` sidecar it produces is a full copy of the unstripped binary — larger than llvm-objcopy's, but debuggers consume it the same way via the debug link.
 
 ## Runtime Dependencies on Target Linux Systems
 
