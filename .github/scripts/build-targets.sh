@@ -15,6 +15,23 @@ IFS=',' read -ra TARGET_ARRAY <<< "$2"
 # rcodesign is invoked by the SignMacOsBinary target for osx-x64
 export PATH="$PWD/.rcodesign:$PATH"
 
+# The target groups run concurrently (parallel steps in
+# cross-platform-validation.yml), so up to three dotnet processes run at once on
+# this host. coreclr derives its shared-memory dir from $TMPDIR
+# ($TMPDIR/.dotnet/shm/session<id>, keyed on the login session, not the PID), so
+# the concurrent processes collide creating it and one fails with
+# `mkdir(...session<id>) == -1; errno == EEXIST`. Give each invocation its own
+# TMPDIR so the shm trees don't overlap. Skipped on Windows: it has no such shm
+# path, and an MSYS-style TMPDIR wouldn't survive the bash -> dotnet boundary.
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) ;;
+  *)
+    TMPDIR="${RUNNER_TEMP:-/tmp}/dotnet-tmp/${host_name}-$(echo "$2" | tr ',' '_')"
+    mkdir -p "$TMPDIR"
+    export TMPDIR
+    ;;
+esac
+
 build_success=true
 
 for target in "${TARGET_ARRAY[@]}"; do
@@ -76,7 +93,7 @@ for target in "${TARGET_ARRAY[@]}"; do
       -p:StripSymbols=false \
       -p:InvariantGlobalization=true \
       -p:BaseIntermediateOutputPath="$obj_dir" \
-      "${sign_args[@]}" \
+      ${sign_args[@]+"${sign_args[@]}"} \
       --output "artifacts/$host_name/$target"; then
 
       echo "✅ Cross-compilation build succeeded for $target"
