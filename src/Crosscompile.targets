@@ -221,6 +221,10 @@
   </Target>
   <!-- END: Works around ILCompiler targets not detecting this as a cross compilation -->
 
+  <!-- Experimental direct zig invocation for Linux targets, see the file
+       header there for the design. -->
+  <Import Project="$(MSBuildThisFileDirectory)DirectLink.targets" />
+
   <!-- For Windows targets lld writes $(TargetName).pdb next to the binary
        (the name the PE's CodeView record references), but the SDK's
        _CopyAotSymbols only knows MSVC's host-Windows layout and misses it.

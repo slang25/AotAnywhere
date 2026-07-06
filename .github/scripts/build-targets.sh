@@ -53,6 +53,17 @@ for target in "${TARGET_ARRAY[@]}"; do
   # would not survive the bash -> dotnet boundary.
   obj_dir="$RUNNER_TEMP/aot-obj/$target/"
 
+  # A "<rid>-direct" pseudo-target publishes that RID with the experimental
+  # AotAnywhereDirectLink flag (zig invoked directly instead of through the
+  # clang shim). The artifact directory keeps the suffixed name, so the
+  # validate job runs both flavors of the binary.
+  rid="$target"
+  direct_args=()
+  if [[ "$target" == *-direct ]]; then
+    rid="${target%-direct}"
+    direct_args=("-p:AotAnywhereDirectLink=true")
+  fi
+
   # Determine if this is a cross-compilation or native build
   if [[ "$target" == linux-* ]]; then
     echo "Cross-compiling to Linux target using AotAnywhere..."
@@ -60,15 +71,26 @@ for target in "${TARGET_ARRAY[@]}"; do
     # for Linux targets and is served by the shim's llvm-objcopy
     # personality, so this exercises the strip pipeline on every
     # host x target combination.
+    publish_log="/tmp/publish-$group_id-$target.log"
     if dotnet publish test/Hello.csproj \
-      -r "$target" \
+      -r "$rid" \
+      ${direct_args[@]+"${direct_args[@]}"} \
       -c Release \
       -p:InvariantGlobalization=true \
       -p:BaseIntermediateOutputPath="$obj_dir" \
-      --output "artifacts/$host_name/$target"; then
+      --output "artifacts/$host_name/$target" 2>&1 | tee "$publish_log"; then
 
       echo "✅ Cross-compilation build succeeded for $target"
       build_result="success"
+
+      # Tripwire for the direct-link pseudo-targets: the clang personality
+      # prints this marker whenever it handles a Linux link, so its presence
+      # means the publish silently fell back to the shim flow instead of
+      # linking with zig directly.
+      if [[ "$target" == *-direct ]] && grep -Fq "clang shim] Detected Linux compilation target" "$publish_log"; then
+        echo "❌ Direct-link publish for $target fell back to the clang shim link"
+        build_result="failed"
+      fi
     else
       echo "❌ Cross-compilation build failed for $target"
       build_result="failed"

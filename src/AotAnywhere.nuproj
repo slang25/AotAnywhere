@@ -32,6 +32,10 @@
       <Pack>true</Pack>
       <PackagePath>build</PackagePath>
     </None>
+    <None Include="DirectLink.targets">
+      <Pack>true</Pack>
+      <PackagePath>build</PackagePath>
+    </None>
     <None Include="clang_shim.zig">
       <Pack>true</Pack>
       <PackagePath>build</PackagePath>

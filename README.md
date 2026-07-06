@@ -172,6 +172,16 @@ Cross-compilation works by putting a small `clang` shim on `PATH` that rewrites 
 
 The prebuilt shims are cross-compiled from a single machine at pack time (see `BuildClangShims` in `AotAnywhere.nuproj`); Zig makes producing all host binaries from one host trivial.
 
+### Experimental: direct zig linking for Linux targets
+
+`/p:AotAnywhereDirectLink=true` links Linux targets by invoking `zig cc`
+directly from MSBuild instead of routing the SDK's link step through the
+clang shim. The SDK still computes what to link; only the invocation changes,
+and the full zig command line becomes visible in build logs. Output should be
+equivalent to the default flow. See
+[docs/direct-link-prototype.md](docs/direct-link-prototype.md) for the design
+and its current limits. Off by default; other targets are unaffected.
+
 ### Using your own Zig
 
 If you don't want to use Zig from the Vezel.Zig.Toolsets NuGet package, you can specify `/p:UseExternalZig=true`. This will use whatever Zig is on your PATH. [Download](https://ziglang.org/download/) an archive with Zig for your host machine, extract it and place it on your PATH.

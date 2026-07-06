@@ -248,11 +248,15 @@ jobs:
             env:
               ZIG_SHIM_DEBUG: "1"
             run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "osx-x64,osx-arm64"
-          - name: Build Windows targets
+          # linux-x64-direct rides in this group (the lightest one, keeping
+          # the four streams balanced at 3/3/2+1/3): it republishes linux-x64
+          # with the experimental AotAnywhereDirectLink flag, which links by
+          # invoking zig directly instead of through the clang shim.
+          - name: Build Windows targets and direct-link linux-x64
             shell: bash
             env:
               ZIG_SHIM_DEBUG: "1"
-            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "win-x64,win-arm64"
+            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "win-x64,win-arm64,linux-x64-direct"
 
 
       - name: Upload build artifacts
@@ -271,10 +275,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Test x64 binaries on Ubuntu x64
+          # Test x64 binaries on Ubuntu x64 (linux-x64-direct is the same RID
+          # published with the experimental AotAnywhereDirectLink flag)
           - runner: ubuntu-latest
             runner-name: ubuntu-x64
-            test-targets: "linux-x64,linux-musl-x64"
+            test-targets: "linux-x64,linux-musl-x64,linux-x64-direct"
             host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
           # Test ARM64 binaries on Ubuntu ARM64 (now runnable on hosted ARM runners)
           - runner: ubuntu-24.04-arm

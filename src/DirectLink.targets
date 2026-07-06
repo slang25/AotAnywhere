@@ -1,0 +1,103 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- Experimental (AotAnywhereDirectLink=true): link by invoking zig
+       directly instead of having the ILC targets call a clang-impersonating
+       shim found on PATH.
+
+       The ILC SDK targets remain the source of truth for WHAT to link:
+       SetupOSSpecificProps still computes $(NativeObject), @(NativeLibrary)
+       and @(LinkerArg) exactly as before (including the - -target triple that
+       OverwriteTargetTriple injects). This target only takes over HOW the
+       link is invoked: it builds the same command line the SDK's LinkNative
+       would, applies the zig-specific fixups the clang shim used to apply at
+       process-spawn time, and runs `zig cc` by absolute path.
+
+       Seam: the package's targets are imported (via the NuGet extension
+       point in Microsoft.Common.targets) BEFORE the SDK imports
+       Microsoft.NETCore.Native.targets, so LinkNative cannot be redefined
+       here - a later definition would override ours. Instead this target
+       runs BeforeTargets="LinkNative" with LinkNative's own Inputs/Outputs;
+       once it has produced $(NativeBinary), LinkNative's incremental check
+       finds its output up to date and skips itself.
+
+       Scope of the prototype: Linux targets (glibc and musl), executables
+       and shared libraries. Other RIDs and NativeLib=Static keep the shim
+       flow. SetupOSSpecificProps' linker probes still require the clang
+       shim on PATH, so the shim materialization is unchanged; the objcopy
+       personality also still performs the symbol strip (zig cannot strip
+       ELF), invoked here by absolute path. -->
+
+  <PropertyGroup>
+    <AotAnywhereDirectLink Condition="'$(AotAnywhereDirectLink)' == ''">false</AotAnywhereDirectLink>
+    <_AotAnywhereDirectLinkActive>false</_AotAnywhereDirectLinkActive>
+    <_AotAnywhereDirectLinkActive Condition="'$(AotAnywhereDirectLink)' == 'true' and $(RuntimeIdentifier.StartsWith('linux')) and '$(NativeLib)' != 'Static'">true</_AotAnywhereDirectLinkActive>
+  </PropertyGroup>
+
+  <Target Name="AotAnywhereDirectLinkNative"
+          Condition="'$(_AotAnywhereDirectLinkActive)' == 'true'"
+          BeforeTargets="LinkNative"
+          DependsOnTargets="SetupOSSpecificProps;OverwriteTargetTriple;SetPathToZig;SetPathToClang"
+          Inputs="$(NativeObject);@(NativeLibrary)"
+          Outputs="$(NativeBinary)">
+
+    <!-- $(ZigPath) can be a dangling '/tools' when the Vezel package was not
+         part of the restore (the known consumer restore gap); fall back to a
+         PATH zig in that case, matching how the shim flow degrades. -->
+    <PropertyGroup>
+      <_AotAnywhereZigExe>zig</_AotAnywhereZigExe>
+      <_AotAnywhereZigExe Condition="'$(UseExternalZig)' == 'false' and Exists('$(ZigPath)')">$(ZigPath)/zig</_AotAnywhereZigExe>
+      <_AotAnywhereZigExe Condition="'$(UseExternalZig)' == 'false' and Exists('$(ZigPath)') and $([MSBuild]::IsOSPlatform('Windows'))">$(ZigPath)/zig.exe</_AotAnywhereZigExe>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <!-- Linker arguments the SDK computes that zig cc cannot take: no libz
+           in zig's Linux sysroots (net8 always adds -lz; net9+ link the
+           bundled libz.a instead), and -pie / the shared-library null entry
+           point are rejected by the zig driver. Identical to the drop list
+           the clang shim applies. Both -Wl,-e spellings occur: net8 emits
+           -Wl,-e0x0, net10+ -Wl,-e,0x0. -->
+      <_AotAnywhereDroppedLinkerArg Include="-lz" />
+      <_AotAnywhereDroppedLinkerArg Include="-pie -Wl,-pie" />
+      <_AotAnywhereDroppedLinkerArg Include="-Wl,-e0x0" />
+      <_AotAnywhereDroppedLinkerArg Include="-Wl,-e,0x0" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <!-- The same command line the SDK's LinkNative builds for a non-Apple
+           Unix target, in the same order, with the shim's zig fixups folded
+           in. -Wl,-u,__Module keeps ILC's module section alive through the
+           link (the SDK's equivalent, an lld linker script, is only emitted
+           for LinkerFlavor=lld; on Linux the SDK defaults to bfd so it never
+           applies here). -->
+      <_AotAnywhereLinkArg Include="-Wl,-u,__Module" />
+      <_AotAnywhereLinkArg Include="&quot;$(NativeObject)&quot;" />
+      <_AotAnywhereLinkArg Include="-o &quot;$(NativeBinary)&quot;" />
+      <_AotAnywhereLinkArg Include="-Wl,--version-script=&quot;$(ExportsFile)&quot;" Condition="'$(ExportsFile)' != ''" />
+      <_AotAnywhereLinkArg Include="-Wl,--export-dynamic" Condition="'$(ExportsFile)' != ''" />
+      <_AotAnywhereLinkArg Include="@(LinkerArg)" Exclude="@(_AotAnywhereDroppedLinkerArg)" />
+      <_AotAnywhereLinkArg Include="-Wl,--discard-all" />
+      <_AotAnywhereLinkArg Include="-Wl,--gc-sections" />
+    </ItemGroup>
+
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName($(NativeBinary)))" />
+
+    <Message Importance="high" Text="AotAnywhere: linking $(NativeBinary) with zig directly (experimental AotAnywhereDirectLink)" />
+
+    <Exec Command="&quot;$(_AotAnywhereZigExe)&quot; cc @(_AotAnywhereLinkArg, ' ')"
+          CustomWarningRegularExpression="$(IlcCppLinkerCustomWarningRegularExpression)" />
+
+    <!-- remove executable flag, as the SDK's LinkNative does for libraries -->
+    <Exec Command="chmod 644 &quot;$(NativeBinary)&quot;" Condition="'$(NativeLib)' == 'Shared' and !$([MSBuild]::IsOSPlatform('Windows'))" />
+
+    <!-- The SDK's strip steps, verbatim, pointed at the objcopy personality
+         of the shim by absolute path instead of an llvm-objcopy from PATH. -->
+    <Exec Condition="'$(StripSymbols)' == 'true' and '$(NativeDebugSymbols)' == 'true'"
+          Command="&quot;$(ObjCopyShimBinary)&quot; --only-keep-debug &quot;$(NativeBinary)&quot; &quot;$(NativeBinary)$(NativeSymbolExt)&quot;" />
+    <Exec Condition="'$(StripSymbols)' == 'true'"
+          Command="&quot;$(ObjCopyShimBinary)&quot; --strip-debug --strip-unneeded &quot;$(NativeBinary)&quot;" />
+    <Exec Condition="'$(StripSymbols)' == 'true' and '$(NativeDebugSymbols)' == 'true'"
+          Command="&quot;$(ObjCopyShimBinary)&quot; --add-gnu-debuglink=&quot;$(NativeBinary)$(NativeSymbolExt)&quot; &quot;$(NativeBinary)&quot;" />
+
+  </Target>
+
+</Project>

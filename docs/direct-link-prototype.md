@@ -1,0 +1,94 @@
+# Direct-link prototype (`AotAnywhereDirectLink`)
+
+`src/DirectLink.targets` is an experimental alternative to the clang-shim
+link flow, scoped to Linux targets (glibc and musl). Opt in with
+`/p:AotAnywhereDirectLink=true`. The default flow is unchanged when the flag
+is off.
+
+## What it does
+
+The established flow lets the ILC SDK targets run their normal `LinkNative`
+against a `clang` found on PATH, which is really the shim; the shim rewrites
+the argument list and execs `zig cc`. The direct flow instead builds the
+link command in MSBuild — from the same SDK-computed inputs — and runs
+`zig cc` by absolute path. The division of labor:
+
+- **SDK targets (unchanged, source of truth for _what_ to link):**
+  `SetupOSSpecificProps` computes `$(NativeObject)`, `@(NativeLibrary)` and
+  `@(LinkerArg)` — the runtime/framework static libs, system libs, hardening
+  flags — exactly as before, including the `--target` triple injected by
+  `OverwriteTargetTriple`.
+- **`AotAnywhereDirectLinkNative` (new, owns _how_ it is linked):**
+  replicates the command line the SDK's `LinkNative` would build for a
+  non-Apple Unix target, applies the same zig fixups the clang shim applies
+  at process-spawn time (drop `-lz`, `-pie -Wl,-pie`, the shared-library
+  null entry point; add `-Wl,-u,__Module`), and `Exec`s
+  `$(ZigPath)/zig cc ...` directly. The strip steps run the shim's objcopy
+  personality by absolute path.
+
+## Design constraints discovered
+
+These shaped the implementation and are worth keeping in mind when deciding
+whether to go further down this road:
+
+- **`LinkNative` cannot be redefined by the package.** For real NuGet
+  consumers our `.targets` are imported through the project-extensions hook
+  at the top of `Microsoft.Common.targets`, while the SDK imports
+  `Microsoft.NETCore.Native.targets` much later (`Microsoft.NET.Sdk.targets`,
+  the `$(ILCompilerTargetsPath)` import). A later definition of a same-named
+  target overrides an earlier one, so an override in our package would itself
+  be overridden. Instead the new target runs `BeforeTargets="LinkNative"`
+  with LinkNative's own `Inputs`/`Outputs`; once it has produced
+  `$(NativeBinary)`, LinkNative's incremental check finds its output up to
+  date and skips itself. (The test harness imports `src/` targets *after*
+  `Sdk.targets` — the opposite order — so only order-independent mechanisms
+  like this one behave the same in both.)
+- **The shim is still required on PATH.** `SetupOSSpecificProps` probes
+  `command -v "$(CppLinker)"` (`where /Q` on Windows hosts) and errors when
+  the linker is missing, before we ever run. `where /Q` does not accept
+  absolute paths, so pointing `CppLinker` at the shim binary directly would
+  break Windows hosts. Eliminating the PATH prepend therefore needs a
+  per-host strategy and was left out of the prototype.
+- **The `-fuse-ld=lld` linker-version probe never fires for Linux.** The SDK
+  defaults `LinkerFlavor` to `bfd` there, so `_LinkerVersion` stays unset and
+  the SDK's `sections.ld` (`KEEP(*(__modules))`) path never applies; module
+  retention rides on `-Wl,-u,__Module`, same as the shim flow.
+- **Version drift lands in the drop list, not the structure.** net8 always
+  adds `-lz` and spells the shared-library entry `-Wl,-e0x0`; net10 links the
+  bundled `libz.a`/brotli instead and spells it `-Wl,-e,0x0`. Everything else
+  (new static libs like `libaotminipal.a`, `libRuntime.Vxsort*`, zlib-ng,
+  brotli) flowed through `@(LinkerArg)` with no change here — which is the
+  argument for keeping the SDK as the source of truth.
+
+## What was validated
+
+From a macOS arm64 host: linux-x64 (net8 and net10), linux-arm64 and
+linux-musl-x64 publishes; binaries executed in Docker (Debian for glibc,
+Alpine for musl); stripped output with `.dbg` sidecar and `.gnu_debuglink`
+identical in shape to the shim flow; `LinkNative` confirmed skipping via
+binlog; incremental republish behaves like the shim flow. CI publishes
+`linux-x64-direct` from every host and runs it on the ubuntu-x64 validate
+job.
+
+## Why bother / what this buys
+
+- The full `zig cc` command line appears in build logs and binlogs —
+  no argv rewriting hidden inside a shim process.
+- The linker invocation is constructed from structured items instead of
+  reverse-engineered from a generated command line.
+- The link no longer depends on the clang personality of the shim at all
+  (the objcopy personality is still used for the ELF strip, which zig
+  cannot do).
+- It is the stepping stone to invoking zig without any PATH/environment
+  mutation, once the `SetupOSSpecificProps` probes are dealt with.
+
+## Not covered (future work, if the experiment earns it)
+
+- macOS targets (Apple sysroot flags, pad file, swift overlay libs — all
+  currently clang-shim logic) and Windows targets (the MSVC `link.rsp`
+  translation, MinGW glue, `/MERGE` COFF renames — all link-shim logic).
+- `NativeLib=Static` (the SDK uses `ar` via `CppLibCreator`; untouched).
+- Removing the PATH prepends and the `AOTANYWHERE_APPLE_SYSROOT`
+  process-environment channel.
+- `StaticICULinking`/`StaticOpenSslLinking` invoke `build-local.sh` with
+  `CC=$(CppLinker)`; they keep working only because the shim stays on PATH.
