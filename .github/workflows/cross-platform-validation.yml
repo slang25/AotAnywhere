@@ -87,6 +87,37 @@ jobs:
       - name: zig test the shims
         run: dotnet build -t:TestShims src/AotAnywhere.nuproj
 
+  # Consume the package the way real users do — installed from a feed into a
+  # clean NuGet cache. test/Hello.csproj (used by the build matrix) imports
+  # src/*.targets directly, which makes the package's Zig toolset reference a
+  # first-class project reference restore can see; a real consumer gets it
+  # from inside the installed package, where restore cannot (NuGet/Home#4790).
+  # This job guards that gap: SDK-element consumption must work zero-config
+  # from a cold cache, and plain-PackageReference consumption must fail with
+  # the actionable error. One host is enough — the restore-graph behavior
+  # under test is host-independent.
+  package-consumption:
+    needs: pack
+    runs-on: ubuntu-latest
+    name: Package consumption (clean NuGet cache)
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+      # Reuse the shims from the pack job (whose host zig is proven to
+      # cross-compile all of them): with them in place, the script's pack
+      # skips BuildClangShims as up-to-date.
+      - name: Download prebuilt shims
+        uses: actions/download-artifact@v8
+        with:
+          name: prebuilt-shims
+          path: src/obj/shim
+      - name: Test package consumption from a clean NuGet cache
+        run: bash .github/scripts/test-package-consumption.sh linux-x64
+
   # Generate a throwaway self-signed Developer ID-style certificate that the
   # build jobs use to exercise the signing integration. Generated once here:
   # rcodesign emits a PEM pair, and Ubuntu's OpenSSL converts it to a PKCS#12

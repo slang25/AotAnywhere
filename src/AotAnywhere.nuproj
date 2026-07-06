@@ -52,11 +52,61 @@
       <Pack>true</Pack>
       <PackagePath>build/apple-sysroot</PackagePath>
     </None>
+    <!-- Sdk/Sdk.props is packed by BakeSdkProps below (it needs the version
+         substituted); only the static half is a plain pack item. -->
+    <None Include="Sdk/Sdk.targets">
+      <Pack>true</Pack>
+      <PackagePath>Sdk</PackagePath>
+    </None>
     <None Include="../README.md">
       <Pack>true</Pack>
       <PackagePath>/</PackagePath>
     </None>
   </ItemGroup>
+
+  <!-- Sdk.props declares a PackageReference back to this package, which must
+       carry the real version being packed; bake it in. A Roslyn inline task
+       (the pattern Crosscompile.targets already uses) rather than
+       WriteLinesToFile, which would mangle the XML on semicolons. -->
+  <UsingTask TaskName="ReplaceInFile"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Source ParameterType="System.String" Required="true" />
+      <Destination ParameterType="System.String" Required="true" />
+      <Find ParameterType="System.String" Required="true" />
+      <ReplaceWith ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+          Directory.CreateDirectory(Path.GetDirectoryName(Destination));
+          File.WriteAllText(Destination, File.ReadAllText(Source).Replace(Find, ReplaceWith));
+        ]]>
+      </Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="BakeSdkProps" BeforeTargets="_GetPackageFiles">
+
+    <PropertyGroup>
+      <_BakedSdkProps>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(BaseIntermediateOutputPath)', 'Sdk.props'))</_BakedSdkProps>
+    </PropertyGroup>
+
+    <ReplaceInFile Source="$(MSBuildProjectDirectory)/Sdk/Sdk.props"
+                   Destination="$(_BakedSdkProps)"
+                   Find="__AOTANYWHERE_PACKAGE_VERSION__"
+                   ReplaceWith="$(Version)" />
+
+    <ItemGroup>
+      <None Include="$(_BakedSdkProps)">
+        <Pack>true</Pack>
+        <PackagePath>Sdk</PackagePath>
+      </None>
+    </ItemGroup>
+
+  </Target>
 
   <!-- Zig for the pack host, used to cross-compile the shims for every host RID. -->
   <ItemGroup>
@@ -101,7 +151,7 @@
 
   <Target Name="BuildClangShims"
           DependsOnTargets="_ResolveZigForShims"
-          Inputs="clang_shim.zig;objcopy_shim.zig;link_shim.zig;@(ShimTarget)"
+          Inputs="clang_shim.zig;objcopy_shim.zig;link_shim.zig;$(MSBuildProjectFullPath)"
           Outputs="@(ShimTarget->'$(ShimIntermediateDir)%(Identity)/%(Exe)')">
 
     <MakeDir Directories="$(ShimIntermediateDir)%(ShimTarget.Identity)" />

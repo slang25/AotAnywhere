@@ -67,7 +67,10 @@ A dedicated job generates a throwaway self-signed Developer ID-style certificate
 - Verifies "Hello World" output
 - Reports success/failure rates
 
-### 5. Platform Support Report
+### 5. Package Consumption
+The build matrix imports `src/StuDev.AotAnywhere.targets` directly, which hides how the package behaves when installed from a feed: NuGet does not restore package references declared inside a package's build targets, so a first-time consumer only gets Zig through the `Sdk/Sdk.props` entry point. The `package-consumption` job packs the real `.nupkg` into a local feed and publishes a consumer project from a clean NuGet cache (`.github/scripts/test-package-consumption.sh`), asserting that SDK-element consumption works zero-config, that a bare `PackageReference` fails with the actionable error, and that the documented `PackageReference` + explicit Zig toolset alternative works.
+
+### 6. Platform Support Report
 Generates a comprehensive report showing:
 - Which host-target combinations work
 - Binary sizes and architecture information
