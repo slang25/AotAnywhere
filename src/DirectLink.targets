@@ -26,8 +26,9 @@
 
        Scope: Linux targets (glibc and musl), executables and shared
        libraries. Other RIDs keep the shim flow.
-       SetupOSSpecificProps' linker probes still require the clang shim on
-       PATH, so the shim materialization is unchanged; the objcopy
+       SetupOSSpecificProps' linker probes still resolve the clang shim, but
+       by absolute path now (see PointLinkerToShim) rather than a PATH
+       prepend, so the shim materialization is unchanged; the objcopy
        personality also still performs the symbol strip (zig cannot strip
        ELF), invoked here by absolute path. -->
 
@@ -39,7 +40,7 @@
   <Target Name="AotAnywhereDirectLinkNative"
           Condition="'$(_AotAnywhereDirectLinkActive)' == 'true'"
           BeforeTargets="LinkNative"
-          DependsOnTargets="SetupOSSpecificProps;OverwriteTargetTriple;SetPathToZig;SetPathToClang"
+          DependsOnTargets="SetupOSSpecificProps;OverwriteTargetTriple;SetPathToZig;PointLinkerToShim"
           Inputs="$(NativeObject);@(NativeLibrary)"
           Outputs="$(NativeBinary)">
 

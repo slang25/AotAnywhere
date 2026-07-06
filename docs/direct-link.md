@@ -49,12 +49,19 @@ whether to go further down this road:
   date and skips itself. (The test harness imports `src/` targets *after*
   `Sdk.targets` — the opposite order — so only order-independent mechanisms
   like this one behave the same in both.)
-- **The shim is still required on PATH.** `SetupOSSpecificProps` probes
-  `command -v "$(CppLinker)"` (`where /Q` on Windows hosts) and errors when
-  the linker is missing, before we ever run. `where /Q` does not accept
-  absolute paths, so pointing `CppLinker` at the shim binary directly would
-  break Windows hosts. Eliminating the PATH prepend therefore needs a
-  per-host strategy and was left out of the prototype.
+- **The shim is referenced by absolute path, not PATH.**
+  `SetupOSSpecificProps` probes `command -v "$(CppLinker)"` (and the same for
+  the objcopy symbol stripper; `where /Q` on Windows hosts) and errors when
+  the tool is missing, before we ever run. Both `command -v` and `where /Q`
+  accept an absolute path — `where C:\dir\tool.exe` searches `C:\dir` for
+  `tool.exe` directly — so `PointLinkerToShim` sets `CppLinker` (Linux and
+  macOS targets) and `ObjCopyName` (Linux) to the materialized shim's
+  absolute path and the probes resolve without the shim's directory on PATH.
+  This retired the shim PATH prepend on every host. (An earlier note here
+  assumed `where /Q` rejected absolute paths; it does not.) Windows targets
+  are unaffected: win-cross already points `CppLinker` at the link shim by
+  absolute path in `OverwriteTargetTriple` and runs no PATH probe, and a
+  Windows host links win-* natively without importing the package.
 - **The `-fuse-ld=lld` linker-version probe never fires for Linux.** The SDK
   defaults `LinkerFlavor` to `bfd` there, so `_LinkerVersion` stays unset and
   the SDK's `sections.ld` (`KEEP(*(__modules))`) path never applies; module
@@ -104,7 +111,10 @@ Bake coverage beyond Hello World, in both flows for A/B parity:
   (the objcopy personality is still used for the ELF strip, which zig
   cannot do).
 - It is the stepping stone to invoking zig without any PATH/environment
-  mutation, once the `SetupOSSpecificProps` probes are dealt with.
+  mutation. The `SetupOSSpecificProps` linker/objcopy probes are now
+  satisfied by absolute path (`PointLinkerToShim`), so the shim's PATH
+  prepend is gone; only zig itself remains on PATH, because the shim still
+  execs `zig` by bare name.
 
 ## Not covered (future work, if the experiment earns it)
 
@@ -113,9 +123,12 @@ Bake coverage beyond Hello World, in both flows for A/B parity:
   translation, MinGW glue, `/MERGE` COFF renames — all link-shim logic).
 - `NativeLib=Static` (the SDK uses `ar` via `CppLibCreator`; untouched —
   the direct-link target conditions itself out and the SDK flow applies).
-- Removing the PATH prepends and the `AOTANYWHERE_APPLE_SYSROOT`
-  process-environment channel.
+- Removing the remaining zig PATH prepend (the shim execs `zig` by bare
+  name; giving it zig's absolute path — e.g. via an env channel or argv —
+  would let `SetPathToZig` drop the prepend) and the
+  `AOTANYWHERE_APPLE_SYSROOT` process-environment channel.
 - `StaticICULinking`/`StaticOpenSslLinking` invoke `build-local.sh` with
-  `CC=$(CppLinker)`; they keep working only because the shim stays on PATH
-  and forwards compile-only invocations straight to `zig cc` (the Linux
-  hard-error applies to link invocations only).
+  `CC=$(CppLinker)`, now the shim's absolute path (`PointLinkerToShim`);
+  they keep working because the shim forwards compile-only invocations
+  straight to `zig cc` (the Linux hard-error applies to link invocations
+  only).

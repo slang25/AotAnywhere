@@ -20,7 +20,8 @@
 
     <!-- The shim is always materialized into the intermediate dir (so we can
          guarantee the executable bit regardless of how the package was
-         packed), and that dir is what we put on PATH for the ILC link. -->
+         packed), and the ILC targets reference it there by absolute path
+         (see PointLinkerToShim) - no PATH prepend. -->
     <ClangShimDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'aotanywhere'))</ClangShimDir>
     <ClangShimBinary Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(ClangShimDir)clang.exe</ClangShimBinary>
     <ClangShimBinary Condition="'$(ClangShimBinary)' == ''">$(ClangShimDir)clang</ClangShimBinary>
@@ -152,11 +153,29 @@
 
   </Target>
 
-  <Target Name="SetPathToClang"
+  <!-- Point the ILC targets' linker and objcopy at the materialized shim by
+       absolute path. SetupOSSpecificProps (in Microsoft.NETCore.Native.Unix.targets,
+       used for Linux and macOS targets) probes the linker with `command -v`
+       and the symbol stripper with the same - `where /Q` on Windows hosts -
+       and every one of those accepts an absolute path, so the shim no longer
+       needs its directory prepended to PATH to be found. Linux and macOS
+       targets link through the clang personality (Linux only reaches it as a
+       probe - the actual link is the direct zig invocation); the objcopy
+       personality (llvm-objcopy) serves the Linux symbol strip. Windows
+       targets are handled elsewhere: win-cross points CppLinker at the link
+       personality in OverwriteTargetTriple and never runs a PATH probe, and a
+       Windows host links win-* natively without importing this file. -->
+  <Target Name="PointLinkerToShim"
           DependsOnTargets="CopyPrebuiltClangShim;CompileClangShim"
           BeforeTargets="SetupOSSpecificProps">
 
-    <PrependPath Value="$(ClangShimDir)" />
+    <PropertyGroup Condition="!$(RuntimeIdentifier.StartsWith('win'))">
+      <CppLinker>$(ClangShimBinary)</CppLinker>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('linux'))">
+      <ObjCopyName>$(ObjCopyShimBinary)</ObjCopyName>
+    </PropertyGroup>
 
   </Target>
 
