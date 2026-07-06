@@ -1,0 +1,10 @@
+<Project>
+
+  <!-- Intentionally empty: MSBuild requires an Sdk.targets next to Sdk.props.
+       The package's targets are imported through the PackageReference that
+       Sdk.props injects (via the normal build/ auto-import), not from here —
+       importing them at the SDK position would evaluate them before the .NET
+       SDK's own targets, where properties like IntermediateOutputPath are not
+       set yet. -->
+
+</Project>

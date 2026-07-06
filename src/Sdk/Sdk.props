@@ -1,0 +1,53 @@
+<Project>
+
+  <!-- MSBuild SDK consumption (<Sdk Name="StuDev.AotAnywhere" Version="..." />).
+
+       This entry point exists because NuGet cannot restore a PackageReference
+       declared inside a package's build/ targets (NuGet/Home#4790): consumed as
+       a plain PackageReference, the Zig toolset reference in
+       Crosscompile.targets is invisible to restore, so on a clean machine Zig
+       is never fetched and the link fails. SDK props, by contrast, ARE
+       evaluated during restore — so the references below land in the restore
+       graph and everything is fetched first time.
+
+       This file only injects references. All real logic still lives in
+       build/StuDev.AotAnywhere.targets, pulled in through the self
+       PackageReference below, so import order matches plain-PackageReference
+       consumption exactly. -->
+
+  <PropertyGroup>
+    <!-- Replaced with the real package version at pack time (BakeSdkProps in
+         AotAnywhere.nuproj). Overridable so the SDK reference and the package
+         version can be pinned independently if ever needed. -->
+    <AotAnywherePackageVersion Condition="'$(AotAnywherePackageVersion)' == ''">__AOTANYWHERE_PACKAGE_VERSION__</AotAnywherePackageVersion>
+
+    <!-- These defaults are duplicated from Crosscompile.targets (keep in sync;
+         see docs/zig-version-bump.md): on the very first restore the package's
+         build/ targets are not imported yet, so they must be known here. -->
+    <ZigVersion Condition="'$(ZigVersion)' == ''">0.16.0.2</ZigVersion>
+    <HostRuntimeIdentifier Condition="'$(HostRuntimeIdentifier)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</HostRuntimeIdentifier>
+
+    <!-- Tells Crosscompile.targets its own (restore-invisible) Zig reference is
+         superseded by the restore-visible one below. -->
+    <_AotAnywhereZigRefViaSdk>true</_AotAnywhereZigRefViaSdk>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="StuDev.AotAnywhere"
+      Version="$(AotAnywherePackageVersion)"
+      PrivateAssets="all"
+      IsImplicitlyDefined="true" />
+
+    <!-- Zig for the build host. Only referenced when this build would actually
+         cross-link — the same condition as the Crosscompile.targets import in
+         StuDev.AotAnywhere.targets (keep in sync) — so RID-less restores and
+         plain builds don't download a ~50 MB toolchain they won't use. -->
+    <PackageReference Include="Vezel.Zig.Toolsets.$(HostRuntimeIdentifier)"
+      Version="$(ZigVersion)"
+      PrivateAssets="all"
+      IsImplicitlyDefined="true"
+      GeneratePathProperty="true"
+      Condition="'$(UseExternalZig)' != 'true' and '$(HostRuntimeIdentifier)' != '' and ($(RuntimeIdentifier.Contains('linux')) or $(RuntimeIdentifier.Contains('osx')) or ($(RuntimeIdentifier.StartsWith('win')) and !$([MSBuild]::IsOSPlatform('Windows'))))" />
+  </ItemGroup>
+
+</Project>

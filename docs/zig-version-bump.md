@@ -1,10 +1,12 @@
 # Bumping ZigVersion
 
 `ZigVersion` (the [Vezel.Zig.Toolsets](https://github.com/vezel-dev/zig-toolsets)
-package version) is pinned in two places that **must stay in sync**:
+package version) is pinned in three places that **must stay in sync**:
 
 - `src/Crosscompile.targets`
 - `src/AotAnywhere.nuproj`
+- `src/Sdk/Sdk.props` (the default must be known during a consumer's very
+  first restore, before the package's build targets are imported)
 
 Zig has repeatedly changed behaviour relevant to this package between releases,
 so every bump goes through the checklist below. Most of it is enforced
@@ -12,9 +14,9 @@ automatically — the notes say where.
 
 ## Checklist
 
-- [ ] **Both pins updated and in sync.** Update the `<ZigVersion>` default in
-      *both* files above. Renovate opens the bump PR (see
-      [Automation](#automation)); confirm it touched both.
+- [ ] **All pins updated and in sync.** Update the `<ZigVersion>` default in
+      *all three* files above. Renovate opens the bump PR (see
+      [Automation](#automation)); confirm it touched all of them.
 
 - [ ] **`zig test` the shims passes with the new toolchain.** The shim sources
       (`clang_shim.zig`, `objcopy_shim.zig`) must still compile and pass — zig's
@@ -47,7 +49,7 @@ automatically — the notes say where.
 ## Automation
 
 - **Renovate** (`renovate.json`) watches `Vezel.Zig.Toolsets.*` on nuget.org and
-  opens a PR that bumps the `<ZigVersion>` value in both files. The PR body
+  opens a PR that bumps the `<ZigVersion>` value in all three files. The PR body
   carries this checklist.
 - The **CI already covers most of the checklist** on any PR (`shim-tests`,
   `pack`, `build`, `validate`). The manual items are the ones a green run cannot

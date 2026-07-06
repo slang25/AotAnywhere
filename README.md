@@ -111,11 +111,30 @@ Note that only browser downloads get the quarantine attribute; binaries fetched 
 
 By default it relies on Zig provided by the unofficial [Vezel.Zig.Toolsets](https://github.com/vezel-dev/zig-toolsets) NuGet package. You can specify version of this package using the `ZigVersion` property. Instructions for using your own Zig binaries are near the end of this document. (Maintainers: bumping the pinned `ZigVersion` follows the [ZigVersion bump checklist](docs/zig-version-bump.md).)
 
-1. To your project that is already using Native AOT, add a reference to the [`StuDev.AotAnywhere`](https://www.nuget.org/packages/StuDev.AotAnywhere) NuGet package:
+1. To your project that is already using Native AOT, add an `Sdk` reference to [`StuDev.AotAnywhere`](https://www.nuget.org/packages/StuDev.AotAnywhere) inside the `<Project>` element:
 
-    ```sh
-    dotnet add package StuDev.AotAnywhere
+    ```xml
+    <Project Sdk="Microsoft.NET.Sdk">
+
+      <Sdk Name="StuDev.AotAnywhere" Version="1.0.0-preview.3" />
     ```
+
+    (Or omit the `Version` attribute and pin it once in `global.json` under [`msbuild-sdks`](https://learn.microsoft.com/en-us/visualstudio/msbuild/how-to-use-project-sdk#how-project-sdks-are-resolved).)
+
+    <details>
+    <summary>Why an <code>Sdk</code> reference instead of a <code>PackageReference</code>?</summary>
+
+    The package brings its own linker toolchain (Zig) in through a second, host-specific NuGet package, and NuGet cannot restore package references declared inside a package's build targets ([NuGet/Home#4790](https://github.com/NuGet/Home/issues/4790)) — but SDK props *are* evaluated during restore, so the `Sdk` form fetches everything first time with no further setup.
+
+    A plain `PackageReference` still works if you restore Zig yourself — add the toolset for the machine you build **on** (not the target), e.g. on a linux-x64 build host:
+
+    ```xml
+    <PackageReference Include="StuDev.AotAnywhere" Version="1.0.0-preview.3" PrivateAssets="all" />
+    <PackageReference Include="Vezel.Zig.Toolsets.linux-x64" Version="0.16.0.2" PrivateAssets="all" GeneratePathProperty="true" />
+    ```
+
+    Without that second reference the publish fails with an error explaining these options. (`/p:UseExternalZig=true` with zig on your `PATH` is the third one.)
+    </details>
 2. Publish for one of the newly available RIDs:
     * `dotnet publish -r linux-x64`
     * `dotnet publish -r linux-arm64`

@@ -47,13 +47,21 @@
     <IlcUseEnvironmentalTools Condition="'$(_AotAnywhereWindowsCross)' == 'true'">true</IlcUseEnvironmentalTools>
   </PropertyGroup>
 
+  <!-- NuGet does not restore a PackageReference declared inside a package's
+       build/ targets (NuGet/Home#4790), so on a clean machine this reference
+       alone fetches nothing — only a restore that already imported this file
+       (i.e. any restore after the first) honors it. First-time restore is
+       served by Sdk/Sdk.props, which declares the same reference where restore
+       can see it and sets _AotAnywhereZigRefViaSdk; this one remains for
+       plain-PackageReference consumers, where a second restore (or a warm
+       NuGet cache) still resolves Zig through it. -->
   <ItemGroup>
     <PackageReference Include="Vezel.Zig.Toolsets.$(HostRuntimeIdentifier)"
       Version="$(ZigVersion)"
       PrivateAssets="all"
       IsImplicitlyDefined="true"
       GeneratePathProperty="true"
-      Condition="'$(UseExternalZig)' == 'false'" />
+      Condition="'$(UseExternalZig)' == 'false' and '$(_AotAnywhereZigRefViaSdk)' != 'true'" />
   </ItemGroup>
 
   <UsingTask TaskName="SetEnvVar"
@@ -170,6 +178,21 @@
       <ZigPath Condition="$(HostRuntimeIdentifier.EndsWith('-x64'))">$(PkgVezel_Zig_Toolsets_linux-x64)/tools</ZigPath>
       <ZigPath Condition="$(HostRuntimeIdentifier.EndsWith('-arm64'))">$(PkgVezel_Zig_Toolsets_linux-arm64)/tools</ZigPath>
     </PropertyGroup>
+
+    <!-- The Pkg* property is only generated when the toolset reference was
+         part of this project's restore. When it wasn't (plain-PackageReference
+         consumption; or a host RID the blocks above don't map, like
+         linux-musl-x64), fall back to the toolset already sitting in the
+         NuGet cache — restored by any earlier project or an earlier run. -->
+    <PropertyGroup Condition="'$(UseExternalZig)' == 'false' and !Exists('$(ZigPath)') and '$(NuGetPackageRoot)' != ''">
+      <_AotAnywhereZigCacheDir>$([MSBuild]::NormalizeDirectory('$(NuGetPackageRoot)', 'vezel.zig.toolsets.$(HostRuntimeIdentifier.ToLowerInvariant())', '$(ZigVersion)', 'tools'))</_AotAnywhereZigCacheDir>
+      <ZigPath Condition="Exists('$(_AotAnywhereZigCacheDir)')">$(_AotAnywhereZigCacheDir)</ZigPath>
+    </PropertyGroup>
+
+    <!-- Without this the link fails much later with a bare "zig is not on the
+         PATH" from the shim. -->
+    <Error Condition="'$(UseExternalZig)' == 'false' and !Exists('$(ZigPath)')"
+           Text="AotAnywhere: the Zig toolset ('Vezel.Zig.Toolsets.$(HostRuntimeIdentifier)' $(ZigVersion)) was not restored. NuGet cannot restore package references declared inside a package's build targets, so a plain PackageReference to StuDev.AotAnywhere does not fetch Zig on a clean machine. Either reference the package as an MSBuild SDK instead — &lt;Sdk Name=&quot;StuDev.AotAnywhere&quot; Version=&quot;&lt;package version&gt;&quot; /&gt; — which restores Zig automatically, or add &lt;PackageReference Include=&quot;Vezel.Zig.Toolsets.$(HostRuntimeIdentifier)&quot; Version=&quot;$(ZigVersion)&quot; PrivateAssets=&quot;all&quot; GeneratePathProperty=&quot;true&quot; /&gt; alongside it, or set UseExternalZig=true with zig on your PATH." />
 
     <PrependPath Condition="'$(UseExternalZig)' == 'false'" Value="$(ZigPath)" />
 
