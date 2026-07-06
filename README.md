@@ -42,7 +42,8 @@ Things to know:
 
 - The output imports the Universal CRT (`api-ms-win-crt-*`), exactly like an MSVC-linked NativeAOT binary, so it runs on any stock Windows 10+ system with no extra runtime.
 - A `.pdb` is produced next to the binary and copied to the publish directory, as on Windows.
-- Some MSVC hardening/link features are not carried over: the `/GS` stack cookie keeps a fixed (non-randomized) value, and Control Flow Guard and CET shadow-stack markers (`/CETCOMPAT`) are not emitted. `/MERGE` is also skipped, making the output slightly larger than an MSVC link. For maximum-hardening release builds, link on Windows with MSVC.
+- `/MERGE` is honored — the shim renames the affected sections in copies of the input objects, which makes lld produce the same merged section layout as link.exe — and the `/GS` stack cookie is randomized at startup, mirroring MSVC's `__security_init_cookie`.
+- Some MSVC hardening/link features are still not carried over: Control Flow Guard and CET shadow-stack markers (`/CETCOMPAT`) are not emitted, and identical-code folding (`/OPT:ICF`) is not performed, leaving the output somewhat larger than an MSVC link. For maximum-hardening release builds, link on Windows with MSVC.
 - On a Windows host the package does nothing for `win-*` RIDs; the SDK's native MSVC link (including cross-arch win-x64 ↔ win-arm64 with the right VS components) applies.
 
 ### Signing and notarizing macOS binaries

@@ -147,14 +147,16 @@ jobs:
         uses: actions/checkout@v7
 
       # SDK 9 is needed on top of 8 because the armv7 targets publish as
-      # net9.0 (their ILCompiler runtime packs only ship for .NET 9+); the
-      # other targets keep exercising the net8.0 floor.
+      # net9.0 (their ILCompiler runtime packs only ship for .NET 9+), and
+      # SDK 10 because win-arm64 publishes as net10.0 to exercise the newest
+      # Windows link.rsp shape; the other targets keep the net8.0 floor.
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: |
             8.0.x
             9.0.x
+            10.0.x
 
       # The publishes below restore the Vezel zig toolset for this host plus
       # ILCompiler/runtime packs for all eight target RIDs - several hundred

@@ -9,6 +9,11 @@
          also rules out multi-targeting here. -->
     <TargetFramework>net8.0</TargetFramework>
     <TargetFramework Condition="'$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.EndsWith('-arm'))">net9.0</TargetFramework>
+    <!-- win-arm64 publishes as net10.0 so CI exercises the newest Windows
+         link.rsp shape (extra static libs, /MERGE, /STACK, /CETCOMPAT)
+         through the link shim, while win-x64 keeps covering the net8.0
+         floor with the older shape. -->
+    <TargetFramework Condition="'$(RuntimeIdentifier)' == 'win-arm64'">net10.0</TargetFramework>
     <PublishAot>true</PublishAot>
   </PropertyGroup>
 

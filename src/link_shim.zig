@@ -48,7 +48,7 @@ pub fn run(arena: Allocator, io: std.Io, args: []const []const u8, debug: bool) 
     const tokens = expandResponseFiles(arena, reader, args, 0) catch |err|
         fatal(io, "cannot expand response files: {s}", .{@errorName(err)});
 
-    const translation = translate(arena, tokens.items) catch |err|
+    var translation = translate(arena, tokens.items) catch |err|
         fatal(io, "cannot translate linker arguments: {s}", .{@errorName(err)});
 
     for (translation.warnings.items) |warning| say(io, "{s}", .{warning});
@@ -59,6 +59,8 @@ pub fn run(arena: Allocator, io: std.Io, args: []const []const u8, debug: bool) 
     // intermediate directory), falling back to the output directory.
     const support_dir = tokens.rsp_dir orelse
         (if (translation.out_path) |out| std.fs.path.dirname(out) else null) orelse ".";
+
+    applyMerges(arena, io, &translation, support_dir);
     const glue_path = writeSupportFiles(arena, io, support_dir) catch |err|
         fatal(io, "cannot write support files in '{s}': {s}", .{ support_dir, @errorName(err) });
 
@@ -160,12 +162,23 @@ fn tokenizeLine(arena: Allocator, line: []const u8, out: *Args) !void {
 
 // --- Translation -------------------------------------------------------------
 
+const Merge = struct {
+    from: []const u8,
+    to: []const u8,
+};
+
 const Translation = struct {
     /// zig cc arguments, in input order.
     args: Args = .empty,
     warnings: Args = .empty,
     out_path: ?[]const u8 = null,
     saw_target: bool = false,
+    /// /MERGE:from=to requests, honored by renaming sections in the input
+    /// objects (zig cc cannot pass /MERGE through to lld).
+    merges: std.ArrayList(Merge) = .empty,
+    /// Positional inputs that are loose object files (candidates for the
+    /// section renames above; /MERGE sections only occur in ILC's output).
+    object_inputs: Args = .empty,
 };
 
 /// MSVC options that have no effect on (or no equivalent in) an lld MinGW
@@ -185,7 +198,6 @@ const silently_dropped = [_][]const u8{
 /// rewriting; support-file emission and process launch live in `run`.
 fn translate(arena: Allocator, tokens: []const []const u8) !Translation {
     var t: Translation = .{};
-    var merge_note_emitted = false;
     var debug_emitted = false;
 
     for (tokens) |token| {
@@ -256,10 +268,15 @@ fn translate(arena: Allocator, tokens: []const []const u8) !Translation {
                     try t.args.append(arena, "-Wl,--gc-sections");
                 continue; // ICF and friends: lld's defaults apply
             }
-            if (optPayload(opt, "MERGE") != null) {
-                if (!merge_note_emitted)
-                    try t.warnings.append(arena, "[link shim] Note: /MERGE is not supported by the MinGW driver; sections are left unmerged (slightly larger output, same behavior).");
-                merge_note_emitted = true;
+            if (optPayload(opt, "MERGE")) |spec| {
+                // Honored via section renames in the input objects; see
+                // applyMerges.
+                if (std.mem.indexOfScalar(u8, spec, '=')) |eq| {
+                    const from = spec[0..eq];
+                    const to = spec[eq + 1 ..];
+                    if (from.len > 0 and to.len > 0 and !std.mem.eql(u8, from, to))
+                        try t.merges.append(arena, .{ .from = from, .to = to });
+                }
                 continue;
             }
             if (isDropped(opt)) continue;
@@ -269,7 +286,7 @@ fn translate(arena: Allocator, tokens: []const []const u8) !Translation {
             // when it looks like one - a leading alphabetic name followed by
             // ':' or nothing - and as an input path otherwise.
             if (token[0] == '/' and !looksLikeOption(opt)) {
-                try t.args.append(arena, token);
+                try appendInput(arena, &t, token);
                 continue;
             }
             try t.warnings.append(arena, try std.fmt.allocPrint(arena, "[link shim] Warning: dropping unsupported linker option '{s}'.", .{token}));
@@ -284,10 +301,18 @@ fn translate(arena: Allocator, tokens: []const []const u8) !Translation {
             try t.args.append(arena, try std.fmt.allocPrint(arena, "-l{s}", .{try std.ascii.allocLowerString(arena, base)}));
             continue;
         }
-        try t.args.append(arena, token);
+        try appendInput(arena, &t, token);
     }
 
     return t;
+}
+
+/// Records a file input, remembering loose object files as candidates for
+/// the /MERGE section renames.
+fn appendInput(arena: Allocator, t: *Translation, token: []const u8) !void {
+    if (std.ascii.endsWithIgnoreCase(token, ".obj") or std.ascii.endsWithIgnoreCase(token, ".o"))
+        try t.object_inputs.append(arena, token);
+    try t.args.append(arena, token);
 }
 
 /// "OUT:x" with name "OUT" gives "x"; case-insensitive; null when the
@@ -317,6 +342,146 @@ fn looksLikeOption(opt: []const u8) bool {
         if (!std.ascii.isAlphabetic(c)) return false;
     }
     return true;
+}
+
+// --- /MERGE via COFF section renames -------------------------------------------
+
+/// zig cc cannot pass /MERGE through to lld, so the shim implements the
+/// option where it is actually needed: the merged sections (.managedcode,
+/// hydrated) only occur in the ILC-produced objects. Renaming them
+/// (from -> to, including $-grouped variants like .managedcode$I ->
+/// .text$I) makes lld combine them into the target output section, which
+/// is what link.exe's /MERGE produces. Input objects are never modified -
+/// some live in the shared NuGet cache (bootstrapper.obj) - so any object
+/// needing a rename is copied into the support directory and the linker
+/// argument is redirected to the copy.
+fn applyMerges(arena: Allocator, io: std.Io, t: *Translation, support_dir: []const u8) void {
+    if (t.merges.items.len == 0) return;
+    for (t.object_inputs.items, 0..) |path, index| {
+        const data = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .unlimited) catch |err| {
+            say(io, "[link shim] Warning: skipping /MERGE for '{s}': {s}", .{ path, @errorName(err) });
+            continue;
+        };
+        var total: RenameResult = .{};
+        for (t.merges.items) |merge| {
+            const result = renameCoffSections(data, merge.from, merge.to);
+            total.renamed += result.renamed;
+            total.skipped_long += result.skipped_long;
+            total.skipped_initialized += result.skipped_initialized;
+        }
+        if (total.skipped_long > 0)
+            say(io, "[link shim] Warning: {d} section(s) in '{s}' not merged (target name over 8 chars).", .{ total.skipped_long, path });
+        if (total.skipped_initialized > 0)
+            say(io, "[link shim] Warning: {d} initialized section(s) in '{s}' not merged into .bss.", .{ total.skipped_initialized, path });
+        if (total.renamed == 0) continue;
+
+        // The index prefix keeps same-named objects from different
+        // directories apart.
+        const copy_name = std.fmt.allocPrint(arena, "aotanywhere-merged-{d}-{s}", .{ index, std.fs.path.basename(path) }) catch return;
+        const copy_path = std.fs.path.join(arena, &.{ support_dir, copy_name }) catch return;
+        writeFileReplacing(arena, io, copy_path, data) catch |err| {
+            // The original stays in the link, just without the merge.
+            say(io, "[link shim] Warning: could not write merged copy of '{s}': {s}", .{ path, @errorName(err) });
+            continue;
+        };
+        for (t.args.items) |*arg| {
+            if (std.mem.eql(u8, arg.*, path)) arg.* = copy_path;
+        }
+        say(io, "[link shim] /MERGE: renamed {d} section(s); linking {s} in place of {s}.", .{ total.renamed, copy_path, path });
+    }
+}
+
+const RenameResult = struct {
+    renamed: u32 = 0,
+    /// Sections whose renamed name would not fit the 8-byte inline field
+    /// (adding string-table entries would mean relayouting the file).
+    skipped_long: u32 = 0,
+    /// Initialized sections that /MERGE wanted in .bss; renaming those
+    /// would silently grow the uninitialized image, so they stay put.
+    skipped_initialized: u32 = 0,
+};
+
+const IMAGE_SCN_CNT_UNINITIALIZED_DATA: u32 = 0x80;
+
+/// Renames COFF sections named `from` (or `from$suffix`) to `to` (keeping
+/// the suffix) directly in the object image. Malformed or non-object
+/// inputs (import-library members, resources) are left untouched.
+fn renameCoffSections(data: []u8, from: []const u8, to: []const u8) RenameResult {
+    var result: RenameResult = .{};
+    if (data.len < 20) return result;
+    const machine = rd16(data, 0);
+    if (machine == 0 or machine == 0xffff) return result; // anonymous/import object
+    const section_count = rd16(data, 2);
+    const symtab_offset = rd32(data, 8);
+    const symbol_count = rd32(data, 12);
+    const opt_header_size = rd16(data, 16);
+    const strtab_offset: usize = if (symtab_offset != 0) symtab_offset + @as(usize, symbol_count) * 18 else 0;
+
+    var i: usize = 0;
+    while (i < section_count) : (i += 1) {
+        const header = 20 + @as(usize, opt_header_size) + i * 40;
+        if (header + 40 > data.len) return result;
+        const name = coffSectionName(data, header, strtab_offset) orelse continue;
+
+        var suffix: []const u8 = "";
+        if (!std.mem.eql(u8, name, from)) {
+            if (name.len <= from.len or !std.mem.startsWith(u8, name, from) or name[from.len] != '$') continue;
+            suffix = name[from.len..];
+        }
+
+        if (to.len + suffix.len > 8) {
+            result.skipped_long += 1;
+            continue;
+        }
+        const characteristics = rd32(data, header + 36);
+        if (std.mem.eql(u8, to, ".bss") and characteristics & IMAGE_SCN_CNT_UNINITIALIZED_DATA == 0) {
+            result.skipped_initialized += 1;
+            continue;
+        }
+
+        @memset(data[header..][0..8], 0);
+        std.mem.copyForwards(u8, data[header..][0..to.len], to);
+        std.mem.copyForwards(u8, data[header + to.len ..][0..suffix.len], suffix);
+        result.renamed += 1;
+    }
+    return result;
+}
+
+/// Resolves a section header's name: inline (nul-padded, up to 8 bytes) or
+/// a "/nnn" decimal offset into the string table. Null when unparseable.
+fn coffSectionName(data: []const u8, header: usize, strtab_offset: usize) ?[]const u8 {
+    const raw = data[header..][0..8];
+    if (raw[0] == '/') {
+        const digits = std.mem.sliceTo(raw[1..], 0);
+        const offset = std.fmt.parseInt(u32, digits, 10) catch return null;
+        if (strtab_offset == 0) return null;
+        const start = strtab_offset + offset;
+        if (start >= data.len) return null;
+        const rest = data[start..];
+        return rest[0 .. std.mem.indexOfScalar(u8, rest, 0) orelse return null];
+    }
+    return std.mem.sliceTo(raw, 0);
+}
+
+fn rd16(data: []const u8, offset: usize) u16 {
+    return std.mem.readInt(u16, data[offset..][0..2], .little);
+}
+
+fn rd32(data: []const u8, offset: usize) u32 {
+    return std.mem.readInt(u32, data[offset..][0..4], .little);
+}
+
+/// Writes via a temp file + rename so an interrupted run never leaves a
+/// truncated object behind for an incremental build to pick up.
+fn writeFileReplacing(arena: Allocator, io: std.Io, path: []const u8, data: []const u8) !void {
+    const cwd = std.Io.Dir.cwd();
+    const tmp_path = try std.fmt.allocPrint(arena, "{s}.aotanywhere-tmp", .{path});
+    {
+        const file = try cwd.createFile(io, tmp_path, .{});
+        defer file.close(io);
+        try file.writeStreamingAll(io, data);
+    }
+    try cwd.rename(tmp_path, cwd, path, io);
 }
 
 // --- Support files -----------------------------------------------------------
@@ -412,9 +577,8 @@ const glue_source =
     \\#include <stdlib.h>
     \\#include <stdint.h>
     \\
-    \\/* MSVC /GS stack cookie support (normally in LIBCMT). The cookie stays at
-    \\   its default value: MinGW startup never calls __security_init_cookie, so
-    \\   checks are consistent, just not randomized. */
+    \\/* MSVC /GS stack cookie support (normally in LIBCMT). Starts at MSVC's
+    \\   default value and is randomized by an initializer below. */
     \\uintptr_t __security_cookie = 0x00002B992DDFA232ULL;
     \\uintptr_t __security_cookie_complement = ~0x00002B992DDFA232ULL;
     \\
@@ -423,6 +587,33 @@ const glue_source =
     \\    if (cookie != __security_cookie)
     \\        __builtin_trap();
     \\}
+    \\
+    \\/* Randomize the cookie like MSVC's __security_init_cookie. Registered in
+    \\   .CRT$XCAA - the first C++-init slot, which the MinGW CRT runs via
+    \\   _initterm(__xc_a, __xc_z) before any MSVC-built initializer and before
+    \\   wmain - so no /GS-protected frame is ever live across the change.
+    \\   RtlGenRandom's exported name is SystemFunction036 (advapi32, already
+    \\   linked). MSVC keeps the top 16 bits clear on 64-bit so the cookie can
+    \\   never alias a canonical pointer. */
+    \\int __stdcall SystemFunction036(void *, unsigned long);
+    \\
+    \\static void aa_init_security_cookie(void)
+    \\{
+    \\    uintptr_t cookie = 0;
+    \\    if (!SystemFunction036(&cookie, sizeof cookie)) {
+    \\        cookie = (uintptr_t)&cookie;
+    \\        cookie ^= (uintptr_t)__builtin_readcyclecounter();
+    \\    }
+    \\    cookie &= (uintptr_t)0x0000FFFFFFFFFFFFULL;
+    \\    if (cookie == 0 || cookie == 0x00002B992DDFA232ULL)
+    \\        cookie = 0x00002B992DDFA232ULL ^ (uintptr_t)&cookie;
+    \\    __security_cookie = cookie;
+    \\    __security_cookie_complement = ~cookie;
+    \\}
+    \\
+    \\typedef void (*aa_initializer)(void);
+    \\__attribute__((section(".CRT$XCAA"), used))
+    \\static aa_initializer aa_init_security_cookie_entry = aa_init_security_cookie;
     \\
     \\/* SEH personality for /GS frames, referenced from unwind data. The real one
     \\   validates the cookie during unwind; continuing the search preserves EH
@@ -701,8 +892,16 @@ test "translates the ILC windows link response file" {
     }, t.args.items);
     try testing.expect(t.saw_target);
     try testing.expectEqualStrings("bin/native/Hello.exe", t.out_path.?);
-    // The only warning is the /MERGE note, emitted once for two /MERGE args.
-    try testing.expectEqual(@as(usize, 1), t.warnings.items.len);
+    try testing.expectEqual(@as(usize, 0), t.warnings.items.len);
+
+    // The /MERGE requests are collected for object surgery, and the ILC
+    // object was recognized as a rename candidate.
+    try testing.expectEqual(@as(usize, 2), t.merges.items.len);
+    try testing.expectEqualStrings(".managedcode", t.merges.items[0].from);
+    try testing.expectEqualStrings(".text", t.merges.items[0].to);
+    try testing.expectEqualStrings("hydrated", t.merges.items[1].from);
+    try testing.expectEqualStrings(".bss", t.merges.items[1].to);
+    try expectArgs(&.{ "obj/native/Hello.obj", "/Users/u/.nuget/packages/pack/sdk/bootstrapper.obj" }, t.object_inputs.items);
 }
 
 test "translates DLL, INCLUDE, custom entry and libpath" {
@@ -757,6 +956,94 @@ test "unknown options warn and drop, absolute paths pass through" {
         "-lupper",
     }, t.args.items);
     try testing.expectEqual(@as(usize, 2), t.warnings.items.len);
+}
+
+/// Builds a minimal COFF object image: header, three section headers
+/// (.text inline, .managedcode$I via the string table, hydrated inline and
+/// uninitialized), no symbols, and a string table.
+fn buildTestCoff(arena: Allocator, hydrated_initialized: bool) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    const zeros = [1]u8{0} ** 40;
+
+    try out.appendSlice(arena, &zeros[0..20].*); // file header
+    std.mem.writeInt(u16, out.items[0..2], 0x8664, .little); // machine: amd64
+    std.mem.writeInt(u16, out.items[2..4], 3, .little); // section count
+
+    const strtab_data = "\x00\x00\x00\x00.managedcode$I\x00"; // size fixed up below
+    const strtab_offset = 20 + 3 * 40;
+    std.mem.writeInt(u32, out.items[8..12], strtab_offset, .little); // symbol table (empty) sits at the string table
+    std.mem.writeInt(u32, out.items[12..16], 0, .little); // symbol count
+
+    // Section 1: .text, initialized code.
+    try out.appendSlice(arena, &zeros);
+    var header = out.items[20..];
+    std.mem.copyForwards(u8, header[0..5], ".text");
+    std.mem.writeInt(u32, header[36..40], 0x60000020, .little);
+
+    // Section 2: .managedcode$I via string-table reference "/4".
+    try out.appendSlice(arena, &zeros);
+    header = out.items[20 + 40 ..];
+    std.mem.copyForwards(u8, header[0..2], "/4");
+    std.mem.writeInt(u32, header[36..40], 0x60000020, .little);
+
+    // Section 3: hydrated, exactly 8 name bytes, uninitialized by default.
+    try out.appendSlice(arena, &zeros);
+    header = out.items[20 + 80 ..];
+    std.mem.copyForwards(u8, header[0..8], "hydrated");
+    const hydrated_chars: u32 = if (hydrated_initialized) 0xc0000040 else 0xc0000080;
+    std.mem.writeInt(u32, header[36..40], hydrated_chars, .little);
+
+    try out.appendSlice(arena, strtab_data);
+    std.mem.writeInt(u32, out.items[strtab_offset..][0..4], strtab_data.len, .little);
+    return out.items;
+}
+
+test "MERGE renames grouped and exact-length sections in place" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const coff = try buildTestCoff(arena, false);
+
+    const managed = renameCoffSections(coff, ".managedcode", ".text");
+    try testing.expectEqual(@as(u32, 1), managed.renamed);
+    try testing.expectEqualStrings(".text$I", coffSectionName(coff, 20 + 40, 20 + 3 * 40).?);
+
+    const hydrated = renameCoffSections(coff, "hydrated", ".bss");
+    try testing.expectEqual(@as(u32, 1), hydrated.renamed);
+    try testing.expectEqualStrings(".bss", coffSectionName(coff, 20 + 80, 20 + 3 * 40).?);
+
+    // Untouched section keeps its name; a second pass finds nothing.
+    try testing.expectEqualStrings(".text", coffSectionName(coff, 20, 20 + 3 * 40).?);
+    try testing.expectEqual(@as(u32, 0), renameCoffSections(coff, ".managedcode", ".text").renamed);
+    try testing.expectEqual(@as(u32, 0), renameCoffSections(coff, "hydrated", ".bss").renamed);
+}
+
+test "MERGE refuses unsafe or unrepresentable renames" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // Initialized data must not silently move into .bss.
+    const initialized = try buildTestCoff(arena, true);
+    const bss = renameCoffSections(initialized, "hydrated", ".bss");
+    try testing.expectEqual(@as(u32, 0), bss.renamed);
+    try testing.expectEqual(@as(u32, 1), bss.skipped_initialized);
+    try testing.expectEqualStrings("hydrated", coffSectionName(initialized, 20 + 80, 20 + 3 * 40).?);
+
+    // A renamed name that does not fit 8 bytes inline is skipped.
+    const coff = try buildTestCoff(arena, false);
+    const long = renameCoffSections(coff, ".managedcode", ".mycode");
+    try testing.expectEqual(@as(u32, 0), long.renamed);
+    try testing.expectEqual(@as(u32, 1), long.skipped_long); // ".mycode$I" is 9 bytes
+
+    // Non-object inputs (import members, garbage) are left untouched.
+    var import_member = [_]u8{0} ** 24;
+    std.mem.writeInt(u16, import_member[0..2], 0, .little);
+    std.mem.writeInt(u16, import_member[2..4], 0xffff, .little);
+    try testing.expectEqual(@as(u32, 0), renameCoffSections(&import_member, ".managedcode", ".text").renamed);
+    var garbage = [_]u8{ 1, 2, 3 };
+    try testing.expectEqual(@as(u32, 0), renameCoffSections(&garbage, "a", "b").renamed);
 }
 
 test "option payload parsing is case-insensitive" {
