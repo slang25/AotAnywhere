@@ -7,7 +7,7 @@ $ dotnet publish -r linux-x64
 Microsoft.NETCore.Native.Publish.targets(59,5): error : Cross-OS native compilation is not supported.
 ```
 
-This NuGet package allows using [Zig](https://ziglang.org/) as the linker/sysroot to allow crosscompiling to linux-x64/linux-arm64/linux-arm/linux-musl-x64/linux-musl-arm64/linux-musl-arm as well as osx-x64/osx-arm64 from Windows, macOS, and Linux machines.
+This NuGet package allows using [Zig](https://ziglang.org/) as the linker/sysroot to allow crosscompiling to linux-x64/linux-arm64/linux-arm/linux-musl-x64/linux-musl-arm64/linux-musl-arm as well as osx-x64/osx-arm64 and win-x64/win-arm64 from Windows, macOS, and Linux machines.
 
 ## Supported Host Platforms
 
@@ -21,6 +21,7 @@ This NuGet package allows using [Zig](https://ziglang.org/) as the linker/sysroo
 
 - **Linux** (x64, arm64, arm/ARMv7, glibc, musl) - Full support from all host platforms (the arm/ARMv7 targets require a `net9.0`+ target framework; see [Usage](#usage))
 - **macOS** (x64, arm64) - Cross-compilation using Apple linker stubs bundled with the package (see below)
+- **Windows** (x64, arm64) - Cross-compilation from Linux and macOS hosts using zig's bundled MinGW-w64 import libraries (see below; on a Windows host the SDK links win-* natively with MSVC and this package stays out of the way)
 
 ### macOS Cross-Compilation
 
@@ -32,6 +33,17 @@ Things to know:
 - Symbols are not stripped for macOS targets (`StripSymbols` defaults to `false` there): Apple's `strip`/`dsymutil` are unavailable on other hosts and reject zig-linked binaries anyway.
 - zig gives osx-arm64 binaries an ad-hoc code signature (Apple Silicon refuses to run entirely unsigned code); osx-x64 binaries are left unsigned. Either way that only covers running locally — for distribution you should sign (and if needed notarize) the result, which works from any host, no Mac required; see [Signing and notarizing macOS binaries](#signing-and-notarizing-macos-binaries) below.
 - To link against a real Apple SDK instead of the bundled stubs, set the `AotAnywhereAppleSysroot` MSBuild property (or the `AOTANYWHERE_APPLE_SYSROOT` environment variable) to the SDK root.
+
+### Windows Cross-Compilation
+
+On a Linux or macOS host, `dotnet publish -r win-x64` (or `win-arm64`) normally stops at the `link.exe` step, since there is no MSVC. The package bridges that: the shim also materializes as `link`, translates the MSVC-style response file the ILC targets write, and drives `zig cc -target <arch>-windows-gnu`, which links with lld against the MinGW-w64 (UCRT) import libraries zig bundles. The MSVC-built NativeAOT runtime libraries link against the MinGW C runtime through a small glue object the shim injects (MSVC `/GS` stack-cookie helpers, MSVC-mangled `operator new`/`delete`, the arm64 `_Interlocked*` out-of-line helpers, and a few marker symbols).
+
+Things to know:
+
+- The output imports the Universal CRT (`api-ms-win-crt-*`), exactly like an MSVC-linked NativeAOT binary, so it runs on any stock Windows 10+ system with no extra runtime.
+- A `.pdb` is produced next to the binary and copied to the publish directory, as on Windows.
+- Some MSVC hardening/link features are not carried over: the `/GS` stack cookie keeps a fixed (non-randomized) value, and Control Flow Guard and CET shadow-stack markers (`/CETCOMPAT`) are not emitted. `/MERGE` is also skipped, making the output slightly larger than an MSVC link. For maximum-hardening release builds, link on Windows with MSVC.
+- On a Windows host the package does nothing for `win-*` RIDs; the SDK's native MSVC link (including cross-arch win-x64 ↔ win-arm64 with the right VS components) applies.
 
 ### Signing and notarizing macOS binaries
 
@@ -110,6 +122,10 @@ By default it relies on Zig provided by the unofficial [Vezel.Zig.Toolsets](http
     * `dotnet publish -r linux-musl-x64`
     * `dotnet publish -r linux-musl-arm64`
     * `dotnet publish -r linux-musl-arm` (requires .NET 9+)
+    * `dotnet publish -r osx-x64`
+    * `dotnet publish -r osx-arm64`
+    * `dotnet publish -r win-x64`
+    * `dotnet publish -r win-arm64`
 
    The armv7 targets (`linux-arm`, `linux-musl-arm`) need a `net9.0` or later target framework: .NET only ships ILCompiler runtime packs for them from .NET 9 onwards.
 
@@ -151,7 +167,7 @@ Note: Using invariant globalization disables culture-specific formatting, sortin
 
 ### The clang shim
 
-Cross-compilation works by putting a small `clang` shim on `PATH` that rewrites the linker invocation and forwards it to `zig cc`. The package ships this shim **prebuilt** for the common host RIDs (Windows x86/x64, macOS x64/arm64, Linux x64/arm64) under `build/shim/<host-rid>`, so a normal build just copies it and does no compilation. On any other host the shim is compiled on demand from the bundled `clang_shim.zig` with the Zig toolchain. Pass `/p:UsePrebuiltClangShim=false` to force the compile-on-demand path.
+Cross-compilation works by putting a small `clang` shim on `PATH` that rewrites the linker invocation and forwards it to `zig cc`. It is a multi-call binary: materialized as `llvm-objcopy` it performs the Linux symbol strip, and materialized as `link` it stands in for MSVC's linker when targeting Windows from a non-Windows host. The package ships this shim **prebuilt** for the common host RIDs (Windows x86/x64, macOS x64/arm64, Linux x64/arm64) under `build/shim/<host-rid>`, so a normal build just copies it and does no compilation. On any other host the shim is compiled on demand from the bundled `clang_shim.zig` with the Zig toolchain. Pass `/p:UsePrebuiltClangShim=false` to force the compile-on-demand path.
 
 The prebuilt shims are cross-compiled from a single machine at pack time (see `BuildClangShims` in `AotAnywhere.nuproj`); Zig makes producing all host binaries from one host trivial.
 
@@ -159,11 +175,8 @@ The prebuilt shims are cross-compiled from a single machine at pack time (see `B
 
 If you don't want to use Zig from the Vezel.Zig.Toolsets NuGet package, you can specify `/p:UseExternalZig=true`. This will use whatever Zig is on your PATH. [Download](https://ziglang.org/download/) an archive with Zig for your host machine, extract it and place it on your PATH.
 
-
-Even though Zig allows crosscompiling for Windows as well, it's not possible to crosscompile PublishAot like this due to ABI differences (MSVC vs. MingW ABI).
-
 ## Cross-Platform Validation
 
-This repository includes a comprehensive GitHub Actions workflow that validates cross-compilation support across different host and target platforms. The workflow tests building from Windows and macOS hosts to all supported Linux targets (x64, ARM64, ARMv7, glibc, musl) and validates that the produced binaries run correctly (natively on hosted runners, or under QEMU in arm/v7 containers for the ARMv7 targets).
+This repository includes a comprehensive GitHub Actions workflow that validates cross-compilation support across different host and target platforms. The workflow tests building from Windows, Linux and macOS hosts to all supported Linux, macOS and Windows targets and validates that the produced binaries run correctly (natively on hosted runners, or under QEMU in arm/v7 containers for the ARMv7 targets).
 
 See [docs/cross-platform-validation.md](docs/cross-platform-validation.md) for detailed information about the validation process and platform support matrix.

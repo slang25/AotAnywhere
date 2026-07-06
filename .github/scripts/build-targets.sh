@@ -108,6 +108,24 @@ for target in "${TARGET_ARRAY[@]}"; do
       echo "❌ Cross-compilation build failed for $target"
       build_result="failed"
     fi
+  elif [[ "$target" == win-* ]]; then
+    echo "Publishing Windows target..."
+    # On Windows hosts the SDK links win-* natively with MSVC and the
+    # package stays inert - which is itself worth validating. On Linux and
+    # macOS hosts the shim's link personality drives zig's MinGW link.
+    if dotnet publish test/Hello.csproj \
+      -r "$target" \
+      -c Release \
+      -p:InvariantGlobalization=true \
+      -p:BaseIntermediateOutputPath="$obj_dir" \
+      --output "artifacts/$host_name/$target"; then
+
+      echo "✅ Windows publish succeeded for $target"
+      build_result="success"
+    else
+      echo "❌ Windows publish failed for $target"
+      build_result="failed"
+    fi
   else
     echo "❌ Unknown target platform: $target"
     build_result="failed"
@@ -116,6 +134,7 @@ for target in "${TARGET_ARRAY[@]}"; do
   # Verify the binary was created (if build was successful)
   if [[ "$build_result" == "success" ]]; then
     binary_name="Hello"
+    [[ "$target" == win-* ]] && binary_name="Hello.exe"
 
     if [ -f "artifacts/$host_name/$target/$binary_name" ]; then
       echo "✅ Binary confirmed: $binary_name for $target"
@@ -139,6 +158,18 @@ for target in "${TARGET_ARRAY[@]}"; do
           echo "✅ Symbol sidecar check: Hello.dbg present"
         else
           echo "❌ Symbol sidecar check: Hello.dbg missing (StripSymbols pipeline did not run)"
+          build_success=false
+        fi
+      fi
+
+      # Assert the PDB made it to the publish output for Windows targets:
+      # copied by the SDK on Windows hosts and by the package's
+      # AotAnywhereCopyWindowsPdb target on cross hosts.
+      if [[ "$target" == win-* ]]; then
+        if [ -f "artifacts/$host_name/$target/Hello.pdb" ]; then
+          echo "✅ Symbol sidecar check: Hello.pdb present"
+        else
+          echo "❌ Symbol sidecar check: Hello.pdb missing"
           build_success=false
         fi
       fi

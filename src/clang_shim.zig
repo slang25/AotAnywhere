@@ -2,10 +2,13 @@
 //! adjusting arguments for native compilation and cross-compilation.
 //!
 //! This is a multi-call binary: Crosscompile.targets materializes the same
-//! executable as both `clang` and `llvm-objcopy`, and it dispatches on the
-//! name it was invoked as. The objcopy personality (objcopy_shim.zig) covers
-//! the symbol stripping the ILC targets perform for Linux targets, so
-//! StripSymbols works with no LLVM install.
+//! executable as `clang`, `llvm-objcopy` and `link`, and it dispatches on
+//! the name it was invoked as. The objcopy personality (objcopy_shim.zig)
+//! covers the symbol stripping the ILC targets perform for Linux targets,
+//! so StripSymbols works with no LLVM install. The link personality
+//! (link_shim.zig) stands in for MSVC's link.exe when targeting Windows
+//! from a non-Windows host, translating the MSVC-style link step to
+//! `zig cc -target <arch>-windows-gnu`.
 //!
 //! Crosscompile.targets compiles this on demand with the zig toolchain the
 //! package already provides, so no prebuilt binaries need to ship and the
@@ -22,6 +25,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const objcopy_shim = @import("objcopy_shim.zig");
+const link_shim = @import("link_shim.zig");
 
 const host_is_macos = builtin.os.tag == .macos;
 
@@ -48,6 +52,9 @@ pub fn main(init: std.process.Init) !void {
 
     if (argv.len > 0 and isObjcopyInvocation(argv[0]))
         objcopy_shim.run(arena, io, args);
+
+    if (argv.len > 0 and link_shim.isLinkInvocation(argv[0]))
+        link_shim.run(arena, io, args, debug);
 
     var out: Args = .empty;
     try out.appendSlice(arena, &.{ "zig", "cc" });
@@ -370,6 +377,7 @@ const testing = std.testing;
 
 test {
     _ = objcopy_shim; // include the objcopy personality's tests
+    _ = link_shim; // include the link personality's tests
 }
 
 test "objcopy invocations are detected by executable name" {

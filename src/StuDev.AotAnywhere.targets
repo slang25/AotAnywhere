@@ -1,6 +1,8 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
-  <!-- Windows, Linux, and macOS hosts targeting Linux and macOS are supported -->
-  <Import Project="Crosscompile.targets" Condition="$(RuntimeIdentifier.Contains('linux')) or $(RuntimeIdentifier.Contains('osx'))" />
+  <!-- Windows, Linux, and macOS hosts targeting Linux and macOS are supported,
+       plus Linux and macOS hosts targeting Windows (on a Windows host the SDK
+       links win-* natively with MSVC, so the package stays out of the way). -->
+  <Import Project="Crosscompile.targets" Condition="$(RuntimeIdentifier.Contains('linux')) or $(RuntimeIdentifier.Contains('osx')) or ($(RuntimeIdentifier.StartsWith('win')) and !$([MSBuild]::IsOSPlatform('Windows')))" />
 
 </Project>

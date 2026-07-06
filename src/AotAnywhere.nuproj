@@ -40,6 +40,10 @@
       <Pack>true</Pack>
       <PackagePath>build</PackagePath>
     </None>
+    <None Include="link_shim.zig">
+      <Pack>true</Pack>
+      <PackagePath>build</PackagePath>
+    </None>
     <None Include="apple-sysroot/**">
       <Pack>true</Pack>
       <PackagePath>build/apple-sysroot</PackagePath>
@@ -93,7 +97,7 @@
 
   <Target Name="BuildClangShims"
           DependsOnTargets="_ResolveZigForShims"
-          Inputs="clang_shim.zig;objcopy_shim.zig;@(ShimTarget)"
+          Inputs="clang_shim.zig;objcopy_shim.zig;link_shim.zig;@(ShimTarget)"
           Outputs="@(ShimTarget->'$(ShimIntermediateDir)%(Identity)/%(Exe)')">
 
     <MakeDir Directories="$(ShimIntermediateDir)%(ShimTarget.Identity)" />
@@ -117,6 +121,7 @@
   <ItemGroup>
     <ShimSource Include="clang_shim.zig" />
     <ShimSource Include="objcopy_shim.zig" />
+    <ShimSource Include="link_shim.zig" />
   </ItemGroup>
 
   <!-- Register the shims for packing in a separate, always-run target: doing it

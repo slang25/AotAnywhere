@@ -31,6 +31,20 @@
          works with no LLVM install. -->
     <ObjCopyShimBinary Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(ClangShimDir)llvm-objcopy.exe</ObjCopyShimBinary>
     <ObjCopyShimBinary Condition="'$(ObjCopyShimBinary)' == ''">$(ClangShimDir)llvm-objcopy</ObjCopyShimBinary>
+
+    <!-- Materialized a third time as link, the shim stands in for MSVC's
+         link.exe when targeting Windows from a Linux/macOS host: it
+         translates the MSVC-style response file the ILC targets write into
+         a `zig cc -target <arch>-windows-gnu` invocation. -->
+    <LinkShimBinary Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(ClangShimDir)link.exe</LinkShimBinary>
+    <LinkShimBinary Condition="'$(LinkShimBinary)' == ''">$(ClangShimDir)link</LinkShimBinary>
+
+    <!-- Cross-compiling to Windows: skip the ILC targets' vcvarsall probe (a
+         Windows batch file) so CppLinker stays at its plain-'link' default,
+         which OverwriteTargetTriple then points at the link shim. -->
+    <_AotAnywhereWindowsCross>false</_AotAnywhereWindowsCross>
+    <_AotAnywhereWindowsCross Condition="$(RuntimeIdentifier.StartsWith('win')) and !$([MSBuild]::IsOSPlatform('Windows'))">true</_AotAnywhereWindowsCross>
+    <IlcUseEnvironmentalTools Condition="'$(_AotAnywhereWindowsCross)' == 'true'">true</IlcUseEnvironmentalTools>
   </PropertyGroup>
 
   <ItemGroup>
@@ -107,11 +121,11 @@
           Condition="'$(UsePrebuiltClangShim)' == 'true'"
           BeforeTargets="SetupOSSpecificProps"
           Inputs="$(PrebuiltClangShim)"
-          Outputs="$(ClangShimBinary);$(ObjCopyShimBinary)">
+          Outputs="$(ClangShimBinary);$(ObjCopyShimBinary);$(LinkShimBinary)">
 
     <MakeDir Directories="$(ClangShimDir)" />
-    <Copy SourceFiles="$(PrebuiltClangShim);$(PrebuiltClangShim)" DestinationFiles="$(ClangShimBinary);$(ObjCopyShimBinary)" OverwriteReadOnlyFiles="true" />
-    <Exec Condition="!$([MSBuild]::IsOSPlatform('Windows'))" Command="chmod +x &quot;$(ClangShimBinary)&quot; &quot;$(ObjCopyShimBinary)&quot;" />
+    <Copy SourceFiles="$(PrebuiltClangShim);$(PrebuiltClangShim);$(PrebuiltClangShim)" DestinationFiles="$(ClangShimBinary);$(ObjCopyShimBinary);$(LinkShimBinary)" OverwriteReadOnlyFiles="true" />
+    <Exec Condition="!$([MSBuild]::IsOSPlatform('Windows'))" Command="chmod +x &quot;$(ClangShimBinary)&quot; &quot;$(ObjCopyShimBinary)&quot; &quot;$(LinkShimBinary)&quot;" />
 
   </Target>
 
@@ -120,13 +134,13 @@
           Condition="'$(UsePrebuiltClangShim)' != 'true'"
           DependsOnTargets="SetPathToZig"
           BeforeTargets="SetupOSSpecificProps"
-          Inputs="$(ClangShimSource);$(MSBuildThisFileDirectory)objcopy_shim.zig"
-          Outputs="$(ClangShimBinary);$(ObjCopyShimBinary)">
+          Inputs="$(ClangShimSource);$(MSBuildThisFileDirectory)objcopy_shim.zig;$(MSBuildThisFileDirectory)link_shim.zig"
+          Outputs="$(ClangShimBinary);$(ObjCopyShimBinary);$(LinkShimBinary)">
 
     <MakeDir Directories="$(ClangShimDir)" />
     <Exec Command="zig build-exe -O ReleaseSafe -femit-bin=&quot;$(ClangShimBinary)&quot; &quot;$(ClangShimSource)&quot;" />
-    <Copy SourceFiles="$(ClangShimBinary)" DestinationFiles="$(ObjCopyShimBinary)" OverwriteReadOnlyFiles="true" />
-    <Exec Condition="!$([MSBuild]::IsOSPlatform('Windows'))" Command="chmod +x &quot;$(ObjCopyShimBinary)&quot;" />
+    <Copy SourceFiles="$(ClangShimBinary);$(ClangShimBinary)" DestinationFiles="$(ObjCopyShimBinary);$(LinkShimBinary)" OverwriteReadOnlyFiles="true" />
+    <Exec Condition="!$([MSBuild]::IsOSPlatform('Windows'))" Command="chmod +x &quot;$(ObjCopyShimBinary)&quot; &quot;$(LinkShimBinary)&quot;" />
 
   </Target>
 
@@ -185,12 +199,20 @@
       <TargetTriple Condition="'$(CrossCompileArch)' != '' and $(CrossCompileRid.StartsWith('linux'))">$(CrossCompileArch)-linux-gnu$(CrossCompileAbiSuffix)</TargetTriple>
       <TargetTriple Condition="'$(CrossCompileArch)' != '' and ($(CrossCompileRid.StartsWith('linux-musl')) or $(CrossCompileRid.StartsWith('alpine')))">$(CrossCompileArch)-linux-musl$(CrossCompileAbiSuffix)</TargetTriple>
       <TargetTriple Condition="'$(CrossCompileArch)' != '' and $(CrossCompileRid.StartsWith('osx'))">$(CrossCompileArch)-macos</TargetTriple>
+      <TargetTriple Condition="'$(CrossCompileArch)' != '' and $(CrossCompileRid.StartsWith('win'))">$(CrossCompileArch)-windows-gnu</TargetTriple>
 
       <!-- Apple's strip/dsymutil reject zig-linked binaries (and don't exist
            on Linux/Windows hosts), so default to keeping symbols for macOS
            targets. An explicit /p:StripSymbols=true still wins. -->
       <StripSymbols Condition="$(CrossCompileRid.StartsWith('osx'))">false</StripSymbols>
+
+      <!-- Point the ILC targets' MSVC link step at the shim's link
+           personality, which rewrites it to a zig invocation. -->
+      <CppLinker Condition="'$(_AotAnywhereWindowsCross)' == 'true'">$(LinkShimBinary)</CppLinker>
     </PropertyGroup>
+
+    <Error Condition="'$(_AotAnywhereWindowsCross)' == 'true' and '$(CrossCompileArch)' == ''"
+           Text="AotAnywhere: cross-compiling to '$(RuntimeIdentifier)' is not supported; of the Windows targets only win-x64 and win-arm64 are." />
 
     <ItemGroup>
       <LinkerArg Include="--target=$(TargetTriple)" />
@@ -198,6 +220,19 @@
 
   </Target>
   <!-- END: Works around ILCompiler targets not detecting this as a cross compilation -->
+
+  <!-- For Windows targets lld writes $(TargetName).pdb next to the binary
+       (the name the PE's CodeView record references), but the SDK's
+       _CopyAotSymbols only knows MSVC's host-Windows layout and misses it.
+       Copy it to the publish directory ourselves, after _CopyAotSymbols has
+       finished deleting the managed .pdb it replaces. -->
+  <Target Name="AotAnywhereCopyWindowsPdb"
+          AfterTargets="_CopyAotSymbols"
+          Condition="'$(_AotAnywhereWindowsCross)' == 'true' and '$(CopyOutputSymbolsToPublishDirectory)' != 'false' and Exists('$(NativeOutputPath)$(TargetName).pdb')">
+
+    <Copy SourceFiles="$(NativeOutputPath)$(TargetName).pdb" DestinationFolder="$(PublishDir)" />
+
+  </Target>
 
   <!-- zig leaves an ad-hoc code signature on macOS binaries, which runs
        locally but is not suitable for distribution. This re-signs the linked

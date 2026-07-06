@@ -18,6 +18,8 @@ This repository includes a comprehensive GitHub Actions workflow (`cross-platfor
 - `linux-musl-arm` (armv7, published as `net9.0`)
 - `osx-x64`
 - `osx-arm64`
+- `win-x64`
+- `win-arm64`
 
 ## Workflow Structure
 
@@ -30,7 +32,7 @@ strategy:
     include:
       - host: windows-latest
         host-name: windows
-        targets: "linux-x64,linux-arm64,linux-arm,linux-musl-x64,linux-musl-arm64,linux-musl-arm,osx-x64,osx-arm64"
+        targets: "linux-x64,linux-arm64,linux-arm,linux-musl-x64,linux-musl-arm64,linux-musl-arm,osx-x64,osx-arm64,win-x64,win-arm64"
       # ... same target list from ubuntu-latest, ubuntu-24.04-arm,
       # macos-15-intel and macos-latest hosts
 ```
@@ -51,6 +53,7 @@ A dedicated job generates a throwaway self-signed Developer ID-style certificate
 - Tests x64 binaries on Ubuntu x64 and ARM64 binaries on Ubuntu ARM64 runners
 - Tests ARMv7 binaries under QEMU on the x64 runner, inside `linux/arm/v7` containers (Debian for the glibc target, Alpine for musl) — there is no hosted armv7 runner, and the hosted arm64 runners dropped 32-bit execution
 - Tests macOS binaries on appropriate macOS runners (x64 on macos-15-intel, ARM64 on macos-latest)
+- Tests Windows binaries on Windows runners (win-x64 on windows-latest, win-arm64 on windows-11-arm); binaries from the Windows host are MSVC-linked, the rest are zig/MinGW-linked by the shim's link personality
 - On macOS runners, verifies code signatures with `codesign --verify --strict` (and checks the `osx-x64` binaries carry the CI test certificate) before running
 - Verifies "Hello World" output
 - Reports success/failure rates
@@ -72,7 +75,7 @@ The workflow can be triggered by:
 ## Expected Results
 
 The workflow validates that AotAnywhere successfully enables:
-- Cross-compilation from Windows/macOS to Linux and macOS
+- Cross-compilation from Windows/Linux/macOS hosts to Linux, macOS and Windows targets
 - Support for both glibc and musl targets on Linux
 - Support for x64, ARM64 and ARMv7 architectures
 - Functional binaries that run correctly on target platforms

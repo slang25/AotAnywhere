@@ -48,7 +48,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: src/obj/shim
-          key: prebuilt-shims-${{ hashFiles('src/clang_shim.zig', 'src/objcopy_shim.zig', 'src/AotAnywhere.nuproj') }}
+          key: prebuilt-shims-${{ hashFiles('src/clang_shim.zig', 'src/objcopy_shim.zig', 'src/link_shim.zig', 'src/AotAnywhere.nuproj') }}
       - name: Setup .NET
         if: steps.shim-cache.outputs.cache-hit != 'true'
         uses: actions/setup-dotnet@v5
@@ -120,8 +120,8 @@ jobs:
           name: test-signing-cert
           path: test-cert/
 
-  # Build matrix: every host builds all eight targets; the target list lives
-  # in the parallel build steps below (grouped glibc/musl/macOS).
+  # Build matrix: every host builds all ten targets; the target list lives
+  # in the parallel build steps below (grouped glibc/musl/macOS/Windows).
   build:
     needs: [pack, test-cert]
     strategy:
@@ -222,8 +222,8 @@ jobs:
         shell: bash
         run: dotnet restore test/Hello.csproj
 
-      # The eight publishes are independent, so run them as three concurrent
-      # streams (Actions parallel steps). Three streams - not eight - because
+      # The ten publishes are independent, so run them as four concurrent
+      # streams (Actions parallel steps). Four streams - not ten - because
       # the hosted runners have 3-4 cores and ILC is memory-hungry; grouping
       # keeps them saturated without thrashing. build-targets.sh gives each
       # target its own intermediate dir so the concurrent publishes of the
@@ -246,6 +246,11 @@ jobs:
             env:
               ZIG_SHIM_DEBUG: "1"
             run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "osx-x64,osx-arm64"
+          - name: Build Windows targets
+            shell: bash
+            env:
+              ZIG_SHIM_DEBUG: "1"
+            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "win-x64,win-arm64"
 
 
       - name: Upload build artifacts
@@ -293,6 +298,19 @@ jobs:
           - runner: macos-latest
             runner-name: macos-arm64
             test-targets: "osx-arm64"
+            host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
+          # Test Windows x64 binaries on Windows x64. The windows-host builds
+          # are MSVC-linked (package inert there); the others are zig-linked
+          # by the shim's link personality, so this is where the MinGW-glued
+          # binaries prove they actually run.
+          - runner: windows-latest
+            runner-name: windows-x64
+            test-targets: "win-x64"
+            host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
+          # Test Windows ARM64 binaries on the hosted arm64 Windows runner.
+          - runner: windows-11-arm
+            runner-name: windows-arm64
+            test-targets: "win-arm64"
             host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
     
     runs-on: ${{ matrix.runner }}
@@ -377,7 +395,9 @@ jobs:
             echo ""
             
             for target in "${TARGET_ARRAY[@]}"; do
-              binary_path="binaries-$host/$target/Hello"
+              binary_name="Hello"
+              [[ "$target" == win-* ]] && binary_name="Hello.exe"
+              binary_path="binaries-$host/$target/$binary_name"
               skip_file="binaries-$host/$target/SKIPPED.txt"
               
               total_count=$((total_count + 1))
@@ -448,7 +468,8 @@ jobs:
               # Try to run the binary with timeout
               echo -n "  Execution test: "
               if run_binary "$binary_path" > /tmp/output.txt 2>&1; then
-                output=$(cat /tmp/output.txt)
+                # tr strips the \r that Windows console output leaves in the line.
+                output=$(tr -d '\r' < /tmp/output.txt)
                 if [[ "$output" == "Hello World" ]]; then
                   echo "✅ SUCCESS - Output: '$output'"
                   success_count=$((success_count + 1))
@@ -532,7 +553,7 @@ jobs:
               # Count successful builds
               success_count=0
               for target_dir in binaries-$host/*/; do
-                if [ -f "${target_dir}Hello" ]; then
+                if [ -f "${target_dir}Hello" ] || [ -f "${target_dir}Hello.exe" ]; then
                   success_count=$((success_count + 1))
                 fi
               done
@@ -557,7 +578,9 @@ jobs:
           echo "| Target Platform | Windows Host | Linux Host | macOS x64 Host | macOS ARM64 Host | Linux ARM64 Host | Runtime Validation |" >> platform-report.md
           echo "|-----------------|--------------|------------|----------------|------------------|------------------|-------------------|" >> platform-report.md
 
-          for target in linux-x64 linux-arm64 linux-arm linux-musl-x64 linux-musl-arm64 linux-musl-arm osx-x64 osx-arm64; do
+          for target in linux-x64 linux-arm64 linux-arm linux-musl-x64 linux-musl-arm64 linux-musl-arm osx-x64 osx-arm64 win-x64 win-arm64; do
+            bin="Hello"
+            [[ "$target" == win-* ]] && bin="Hello.exe"
             win_status="❌"
             linux_status="❌"
             mac_x64_status="❌"
@@ -566,16 +589,16 @@ jobs:
             runtime_status="❌ No binaries"
 
             # Check build status
-            [ -f "binaries-windows/$target/Hello" ] && win_status="✅"
-            [ -f "binaries-linux/$target/Hello" ] && linux_status="✅"
-            [ -f "binaries-macos-x64/$target/Hello" ] && mac_x64_status="✅"
-            [ -f "binaries-macos-arm64/$target/Hello" ] && mac_arm64_status="✅"
-            [ -f "binaries-linux-arm64/$target/Hello" ] && linux_arm64_status="✅"
+            [ -f "binaries-windows/$target/$bin" ] && win_status="✅"
+            [ -f "binaries-linux/$target/$bin" ] && linux_status="✅"
+            [ -f "binaries-macos-x64/$target/$bin" ] && mac_x64_status="✅"
+            [ -f "binaries-macos-arm64/$target/$bin" ] && mac_arm64_status="✅"
+            [ -f "binaries-linux-arm64/$target/$bin" ] && linux_arm64_status="✅"
 
             # Runtime validation: every target now has a validation runner
-            # (x64 and ARM64 Linux, plus both macOS architectures).
+            # (x64 and ARM64 Linux and Windows, plus both macOS architectures).
             for host in windows linux macos-x64 macos-arm64 linux-arm64; do
-              if [ -f "binaries-$host/$target/Hello" ]; then
+              if [ -f "binaries-$host/$target/$bin" ]; then
                 runtime_status="✅ Testable"
                 break
               fi
@@ -597,16 +620,18 @@ jobs:
           for host in windows linux macos-x64 macos-arm64 linux-arm64; do
             if [ -d "binaries-$host" ]; then
               for target_dir in binaries-$host/*/; do
-                if [ -f "${target_dir}Hello" ]; then
+                bin="${target_dir}Hello"
+                [ -f "${target_dir}Hello.exe" ] && bin="${target_dir}Hello.exe"
+                if [ -f "$bin" ]; then
                   target=$(basename "$target_dir")
-                  size_info=$(ls -lh "${target_dir}Hello" | awk '{print $5}')
-                  
+                  size_info=$(ls -lh "$bin" | awk '{print $5}')
+
                   # Get architecture info if file command is available
                   arch_info="Unknown"
                   if command -v file >/dev/null 2>&1; then
-                    arch_info=$(file "${target_dir}Hello" | cut -d',' -f2 | xargs)
+                    arch_info=$(file "$bin" | cut -d',' -f2 | xargs)
                   fi
-                  
+
                   echo "| $host → $target | $size_info | $arch_info |" >> platform-report.md
                 fi
               done
@@ -622,7 +647,7 @@ jobs:
           echo "## Additional Notes" >> platform-report.md
           echo "- This matrix shows cross-compilation capabilities from different host platforms" >> platform-report.md
           echo "- Builds run from x64 and ARM64 Windows, Linux, and macOS hosts" >> platform-report.md
-          echo "- Runtime validation covers Linux (x64 and ARM64) and macOS (x64 and ARM64) targets on matching hosted runners; ARMv7 targets run under QEMU in arm/v7 containers" >> platform-report.md
+          echo "- Runtime validation covers Linux, macOS and Windows (x64 and ARM64) targets on matching hosted runners; ARMv7 targets run under QEMU in arm/v7 containers" >> platform-report.md
           echo "- All builds use .NET 8.0 with Native AOT and Zig for cross-compilation, except the ARMv7 targets which use .NET 9.0 (their ILCompiler packs only ship for .NET 9+)" >> platform-report.md
           echo "" >> platform-report.md
           echo "Generated on: $(date -u)" >> platform-report.md
