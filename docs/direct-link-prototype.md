@@ -1,10 +1,11 @@
-# Direct link (`AotAnywhereDirectLink`)
+# Direct link
 
-`src/DirectLink.targets` is the **default link flow for Linux targets**
-(glibc and musl). `/p:AotAnywhereDirectLink=false` is the escape hatch back
-to the clang-shim flow, kept covered in CI (the `-shim` pseudo-targets)
-until it is retired — at which point the shim's Linux rewrite
-(`processLinux`) gets deleted too. macOS and Windows targets always use the
+`src/DirectLink.targets` is the **only link flow for Linux targets**
+(glibc and musl). The `/p:AotAnywhereDirectLink=false` escape hatch back
+to the clang-shim flow — and with it the shim's Linux rewrite
+(`processLinux`) and the `-shim` CI pseudo-targets — was retired once the
+flows had proved equivalent; the clang personality now hard-errors if a
+Linux link ever reaches it. macOS and Windows targets always use the
 shim flows.
 
 This document began as the prototype's design notes; the constraints and
@@ -74,9 +75,9 @@ identical in shape to the shim flow; `LinkNative` confirmed skipping via
 binlog; incremental republish behaves like the shim flow. CI exercised the
 direct flow from every host with execution on the ubuntu-x64 validate job;
 the Windows-host leg (cmd.exe Exec quoting) passed on the first run. After
-the default flip, every plain Linux target in the matrix (glibc/musl,
-x64/arm64/armv7, net8/net9/net10) links via the direct flow, with the
-`-shim` pseudo-targets keeping the escape hatch covered.
+the default flip, every Linux target in the matrix (glibc/musl,
+x64/arm64/armv7, net8/net9/net10) links via the direct flow; the `-shim`
+pseudo-targets kept the escape hatch covered until both were retired.
 
 Bake coverage beyond Hello World, in both flows for A/B parity:
 
@@ -85,8 +86,9 @@ Bake coverage beyond Hello World, in both flows for A/B parity:
   called via ctypes. This surfaced a pre-existing package bug — lld (16+)
   errors on version-script symbols that are not defined (`_init`/`_fini`
   from ILC's generated exports), where GNU ld tolerates them, so net8
-  shared libraries never linked through zig at all. Both flows now add
-  `-Wl,--undefined-version` whenever a version script is used.
+  shared libraries never linked through zig at all. The direct flow adds
+  `-Wl,--undefined-version` whenever a version script is used (the shim's
+  Linux rewrite did too, until it was retired).
 - **Non-trivial app** (`--selftest`, net10, no InvariantGlobalization):
   exercises real ICU (tr-TR casing), zlib (GZip roundtrip through the
   bundled zlib-ng) and OpenSSL (RSA sign/verify) at run time. Both flows

@@ -244,8 +244,8 @@
   </Target>
   <!-- END: Works around ILCompiler targets not detecting this as a cross compilation -->
 
-  <!-- Direct zig invocation, the default link flow for Linux targets; see
-       the file header there for the design and the escape hatch. -->
+  <!-- Direct zig invocation, the only link flow for Linux targets; see
+       the file header there for the design. -->
   <Import Project="$(MSBuildThisFileDirectory)DirectLink.targets" />
 
   <!-- The SDK's _CopyAotSymbols assumes the host and target symbol layouts

@@ -264,16 +264,13 @@ jobs:
       # the implicit wait after the whole group finishes, so every target
       # still gets attempted and uploaded.
       - parallel:
-          # All plain Linux targets link via the default direct zig
-          # invocation. The extra linux-x64 variants, spread across the
-          # groups to keep the four streams balanced at 4/3/4/4:
-          #   linux-x64-selftest[-shim]  - net10.0, real ICU/zlib/OpenSSL,
-          #                                exercised at run time
-          #   lib-linux-x64[-shim]       - NativeLib=Shared library
-          #   linux-x64-shim             - plain exe
-          # The -shim variants publish with AotAnywhereDirectLink=false, the
-          # escape hatch back to the clang-shim link flow, keeping that flow
-          # covered for A/B parity until it is retired.
+          # All Linux targets link via the direct zig invocation (the only
+          # Linux link flow; the clang shim hard-errors if a Linux link
+          # reaches it). The extra linux-x64 variants, spread across the
+          # groups to keep the four streams balanced at 4/3/2/3:
+          #   linux-x64-selftest - net10.0, real ICU/zlib/OpenSSL,
+          #                        exercised at run time
+          #   lib-linux-x64      - NativeLib=Shared library
           - name: Build glibc Linux targets
             shell: bash
             env:
@@ -284,16 +281,16 @@ jobs:
             env:
               ZIG_SHIM_DEBUG: "1"
             run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "linux-musl-x64,linux-musl-arm64,linux-musl-arm"
-          - name: Build macOS targets and linux shared libraries
+          - name: Build macOS targets
             shell: bash
             env:
               ZIG_SHIM_DEBUG: "1"
-            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "osx-x64,osx-arm64,lib-linux-x64,lib-linux-x64-shim"
-          - name: Build Windows targets and shim escape hatch
+            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "osx-x64,osx-arm64"
+          - name: Build Windows targets and linux shared library
             shell: bash
             env:
               ZIG_SHIM_DEBUG: "1"
-            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "win-x64,win-arm64,linux-x64-shim,linux-x64-selftest-shim"
+            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "win-x64,win-arm64,lib-linux-x64"
 
 
       - name: Upload build artifacts
@@ -313,12 +310,12 @@ jobs:
       matrix:
         include:
           # Test x64 binaries on Ubuntu x64. The decorated linux-x64 variants
-          # cover the shim escape hatch (-shim), the shared library (lib-)
-          # loaded via ctypes, and the selftest binary (real ICU, zlib,
-          # OpenSSL) run natively on the runner - each in both link flows.
+          # cover the shared library (lib-) loaded via ctypes and the
+          # selftest binary (real ICU, zlib, OpenSSL) run natively on the
+          # runner.
           - runner: ubuntu-latest
             runner-name: ubuntu-x64
-            test-targets: "linux-x64,linux-musl-x64,linux-x64-shim,lib-linux-x64,lib-linux-x64-shim,linux-x64-selftest,linux-x64-selftest-shim"
+            test-targets: "linux-x64,linux-musl-x64,lib-linux-x64,linux-x64-selftest"
             host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
           # Test ARM64 binaries on Ubuntu ARM64 (now runnable on hosted ARM runners)
           - runner: ubuntu-24.04-arm
