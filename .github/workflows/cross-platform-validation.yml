@@ -210,6 +210,18 @@ jobs:
           mv apple-codesign-*/rcodesign* .
           ./rcodesign --version
 
+      # coreclr keeps its cross-process named mutexes in a per-login-session dir,
+      # /tmp/.dotnet/shm/session<id>, at a FIXED path TMPDIR can't relocate. When
+      # that dir doesn't exist yet, concurrent dotnet processes race to mkdir it
+      # and the loser dies with `errno == EEXIST` ("NuGet-Migrations") - which is
+      # exactly what the three parallel publish groups below would hit on a cold
+      # runner. Run one dotnet up front (a no-RID restore creates the mutex, and
+      # thus the session dir); the concurrent groups then find it and skip the
+      # racy mkdir. No-op on Windows, which has no such shm dir.
+      - name: Warm coreclr shared memory
+        shell: bash
+        run: dotnet restore test/Hello.csproj
+
       # The eight publishes are independent, so run them as three concurrent
       # streams (Actions parallel steps). Three streams - not eight - because
       # the hosted runners have 3-4 cores and ILC is memory-hungry; grouping
