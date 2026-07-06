@@ -1,9 +1,18 @@
 name: Publish to NuGet
 
-# Keyed off the version tag that main.yml's release dispatch pushes, so releases
-# stay one-button: dispatch main.yml with a version -> it tags v<version> ->
-# this workflow validates, packs, and publishes StuDev.AotAnywhere to nuget.org.
+# One-button release: dispatch this workflow with a version -> it validates the
+# full matrix, packs, publishes StuDev.AotAnywhere to nuget.org, then creates the
+# v<version> tag and GitHub release. Dispatched (not tag-triggered) so no PAT is
+# needed: GITHUB_TOKEN can trigger workflow_dispatch (unlike a tag push, which it
+# is blocked from triggering), and the tag is created here after publish so it
+# never needs to trigger anything. A manual `git push` of a v* tag still works as
+# a fallback path.
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version to publish (e.g. 1.0.1)'
+        required: true
   push:
     tags:
       - 'v*'
@@ -38,10 +47,24 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      # Version comes from the dispatch input, or from the tag name on the
+      # fallback tag-push path. tag is always v<version>.
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            version="${{ github.event.inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
       - name: Pack
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${{ steps.ver.outputs.version }}"
           echo "Packing StuDev.AotAnywhere $version"
           dotnet build -t:Pack src/AotAnywhere.nuproj -p:Version="$version"
           nupkg=$(find src/bin -name "StuDev.AotAnywhere.$version.nupkg" | head -1)
@@ -63,16 +86,20 @@ jobs:
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
 
-      # Attach the published .nupkg to a GitHub release for traceability. Guarded
-      # so a re-run of a partially-completed publish updates the release instead
-      # of failing with a 422 already_exists.
-      - name: Attach package to GitHub release
+      # Tag the published commit and attach the .nupkg to a GitHub release.
+      # On the dispatch path the tag does not exist yet, so create it here
+      # (pointing at this run's commit) - after publish, so it never needs to
+      # trigger anything. On the tag-push path the tag already exists and
+      # `gh release create` reuses it. Guarded so a re-run of a partially
+      # completed publish updates the release instead of failing 422.
+      - name: Tag and attach to GitHub release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" artifacts/*.nupkg --clobber
+          tag="${{ steps.ver.outputs.tag }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" artifacts/*.nupkg --clobber
           else
-            gh release create "$GITHUB_REF_NAME" artifacts/*.nupkg --generate-notes
+            gh release create "$tag" --target "$GITHUB_SHA" --generate-notes artifacts/*.nupkg
           fi

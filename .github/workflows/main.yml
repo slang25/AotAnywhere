@@ -4,17 +4,11 @@ on:
   pull_request:
     branches: [ master ]
 
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release version to create'
-        required: true
-
-# A new push to the same PR supersedes the running build; release dispatches
-# are never cancelled.
+# Releases are driven by publish.yml (dispatch it with a version); this is PR CI
+# only. A new push to the same PR supersedes the running build.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   build_and_test:
@@ -40,8 +34,7 @@ jobs:
           key: nuget-ci-${{ runner.os }}-${{ hashFiles('src/AotAnywhere.nuproj', 'src/Crosscompile.targets', 'test/Hello.csproj') }}
           restore-keys: |
             nuget-ci-${{ runner.os }}-
-      - name: Build (CI)
-        if: ${{ github.event.inputs.version == '' }}
+      - name: Build
         shell: bash
         run: |
           dotnet build -t:Pack src/AotAnywhere.nuproj
@@ -51,25 +44,10 @@ jobs:
           # The strip pipeline must have produced the symbol sidecar.
           test -f test/bin/Release/net8.0/linux-x64/publish/Hello.dbg
       - name: Upload test binary
-        if: ${{ github.event.inputs.version == '' }}
         uses: actions/upload-artifact@v7
         with:
           name: Hello
           path: test/bin/Release/net8.0/linux-x64/publish/Hello
-      - name: Build (CD)
-        if: ${{ github.event.inputs.version != '' }}
-        run: dotnet build -t:Pack src/AotAnywhere.nuproj -p:Version=${{ github.event.inputs.version }}
-      - name: Archive NuGet
-        if: ${{ github.event.inputs.version != '' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: StuDev.AotAnywhere.${{ github.event.inputs.version }}.nupkg
-          path: src/bin/Debug/StuDev.AotAnywhere.${{ github.event.inputs.version }}.nupkg
-      - name: Create tag
-        if: ${{ github.event.inputs.version != '' && github.actor == 'slang25' }}
-        run: |
-          git tag v${{ github.event.inputs.version }}
-          git push origin v${{ github.event.inputs.version }}
 
   validate:
     needs: build_and_test
