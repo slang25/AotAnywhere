@@ -116,4 +116,6 @@ Bake coverage beyond Hello World, in both flows for A/B parity:
 - Removing the PATH prepends and the `AOTANYWHERE_APPLE_SYSROOT`
   process-environment channel.
 - `StaticICULinking`/`StaticOpenSslLinking` invoke `build-local.sh` with
-  `CC=$(CppLinker)`; they keep working only because the shim stays on PATH.
+  `CC=$(CppLinker)`; they keep working only because the shim stays on PATH
+  and forwards compile-only invocations straight to `zig cc` (the Linux
+  hard-error applies to link invocations only).

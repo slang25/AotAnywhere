@@ -5,7 +5,9 @@
 //! links are performed directly from MSBuild (DirectLink.targets), and a
 //! Linux link reaching this shim is an error. The personality still
 //! satisfies the ILC targets' PATH probes and `clang --version` queries
-//! for every target OS.
+//! for every target OS, and forwards compile-only invocations (the
+//! CC=clang glue compiles of StaticICULinking/StaticOpenSslLinking)
+//! straight to zig cc.
 //!
 //! This is a multi-call binary: Crosscompile.targets materializes the same
 //! executable as `clang`, `llvm-objcopy` and `link`, and it dispatches on
@@ -92,6 +94,12 @@ pub fn main(init: std.process.Init) !void {
                 say("Warning: could not write {s}: {s}", .{ pad_path, @errorName(err) });
             }
         }
+    } else if (isCompileInvocation(args)) {
+        // The ILC targets' StaticICULinking/StaticOpenSslLinking path runs
+        // build-local.sh with CC pointed at this shim; plain compiles need
+        // none of the link fixups, so forward them to zig cc untouched.
+        say("[clang shim] Detected compile-only invocation.", .{});
+        try out.appendSlice(arena, args);
     } else {
         // Linux links run directly from MSBuild (DirectLink.targets); the
         // clang personality's Linux path was retired along with the
@@ -131,6 +139,16 @@ fn isQueryInvocation(args: []const []const u8) bool {
     for (args) |arg| {
         if (std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-###"))
             return true;
+    }
+    return false;
+}
+
+/// True for invocations that compile (or preprocess) sources without
+/// linking - the shape build-local.sh produces when the ILC targets compile
+/// the static ICU/OpenSSL glue with CC pointed at the shim.
+fn isCompileInvocation(args: []const []const u8) bool {
+    for (args) |arg| {
+        if (matchesAny(arg, &.{ "-c", "-S", "-E", "-fsyntax-only" })) return true;
     }
     return false;
 }
@@ -395,6 +413,13 @@ test "query invocations pass through untouched" {
     try testing.expect(isQueryInvocation(&.{}));
     try testing.expect(!isQueryInvocation(&.{ "-o", "hello", "main.o" }));
     try testing.expect(!isQueryInvocation(&.{ "-c", "-o", "main.o", "main.c" }));
+}
+
+test "compile-only invocations are detected" {
+    try testing.expect(isCompileInvocation(&.{ "-c", "-o", "pal_icushim.o", "pal_icushim.c" }));
+    try testing.expect(isCompileInvocation(&.{ "-E", "config-probe.c" }));
+    try testing.expect(!isCompileInvocation(&.{ "-o", "hello", "main.o" }));
+    try testing.expect(!isCompileInvocation(&.{ "-shared", "-o", "lib.so", "a.o" }));
 }
 
 test "target detection" {

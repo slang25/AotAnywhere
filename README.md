@@ -200,8 +200,7 @@ link flow: the former `AotAnywhereDirectLink=false` escape hatch back to
 the clang shim was retired after the flows proved equivalent
 (byte-identical output in our shared-library tests). macOS and Windows
 targets always link through the shim personalities. See
-[docs/direct-link-prototype.md](docs/direct-link-prototype.md) for the
-design.
+[docs/direct-link.md](docs/direct-link.md) for the design.
 
 ### Using your own Zig
 
