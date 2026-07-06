@@ -15,12 +15,10 @@ IFS=',' read -ra TARGET_ARRAY <<< "$2"
 # rcodesign is invoked by the SignMacOsBinary target for osx-x64
 export PATH="$PWD/.rcodesign:$PATH"
 
-# The target groups run concurrently (parallel steps in
+# This script runs concurrently (three parallel target groups in
 # cross-platform-validation.yml), so up to three dotnet processes run at once on
-# this host. Anything they share and write to races; give each invocation its
-# own copy. The group id keys every per-invocation path below.
-group_id="${host_name}-$(echo "$2" | tr ',' '_')"
-
+# this host. Anything they share and write to races.
+#
 # NuGet's global-packages folder (~/.nuget/packages) and HTTP cache are shared,
 # and concurrent restores race extracting the same packages into them - notably
 # the large Vezel zig toolset, which macOS re-extracts even when already present
@@ -29,25 +27,16 @@ group_id="${host_name}-$(echo "$2" | tr ',' '_')"
 # so isolate the folders per group instead: nothing shared, no collision.
 # $RUNNER_TEMP is a native path on every host, so this is safe on Windows too,
 # and the cache step archives the whole $RUNNER_TEMP/nuget tree.
+#
+# (coreclr's other shared resource, its /tmp/.dotnet/shm/session<id> dir, is a
+# FIXED path that TMPDIR does NOT relocate, so it can't be isolated the same
+# way; the workflow's "Warm coreclr shared memory" step creates it serially,
+# up front, so these concurrent processes never race to mkdir it.)
+group_id="${host_name}-$(echo "$2" | tr ',' '_')"
 nuget_root="${RUNNER_TEMP:-/tmp}/nuget/$group_id"
 export NUGET_PACKAGES="$nuget_root/packages"
 export NUGET_HTTP_CACHE_PATH="$nuget_root/http-cache"
 mkdir -p "$NUGET_PACKAGES" "$NUGET_HTTP_CACHE_PATH"
-
-# coreclr derives its shared-memory dir from $TMPDIR
-# ($TMPDIR/.dotnet/shm/session<id>, keyed on the login session, not the PID), so
-# the concurrent processes collide creating it and one fails with
-# `mkdir(...session<id>) == -1; errno == EEXIST`. Give each invocation its own
-# TMPDIR so the shm trees don't overlap. Skipped on Windows: it has no such shm
-# path, and an MSYS-style TMPDIR wouldn't survive the bash -> dotnet boundary.
-case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*) ;;
-  *)
-    TMPDIR="${RUNNER_TEMP:-/tmp}/dotnet-tmp/$group_id"
-    mkdir -p "$TMPDIR"
-    export TMPDIR
-    ;;
-esac
 
 build_success=true
 
