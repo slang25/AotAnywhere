@@ -1,9 +1,14 @@
-# Direct-link prototype (`AotAnywhereDirectLink`)
+# Direct link (`AotAnywhereDirectLink`)
 
-`src/DirectLink.targets` is an experimental alternative to the clang-shim
-link flow, scoped to Linux targets (glibc and musl). Opt in with
-`/p:AotAnywhereDirectLink=true`. The default flow is unchanged when the flag
-is off.
+`src/DirectLink.targets` is the **default link flow for Linux targets**
+(glibc and musl). `/p:AotAnywhereDirectLink=false` is the escape hatch back
+to the clang-shim flow, kept covered in CI (the `-shim` pseudo-targets)
+until it is retired — at which point the shim's Linux rewrite
+(`processLinux`) gets deleted too. macOS and Windows targets always use the
+shim flows.
+
+This document began as the prototype's design notes; the constraints and
+findings below still describe how and why the flow works the way it does.
 
 ## What it does
 
@@ -66,9 +71,12 @@ From a macOS arm64 host: linux-x64 (net8 and net10), linux-arm64 and
 linux-musl-x64 publishes; binaries executed in Docker (Debian for glibc,
 Alpine for musl); stripped output with `.dbg` sidecar and `.gnu_debuglink`
 identical in shape to the shim flow; `LinkNative` confirmed skipping via
-binlog; incremental republish behaves like the shim flow. CI publishes
-`linux-x64-direct` from every host and runs it on the ubuntu-x64 validate
-job; the Windows-host leg (cmd.exe Exec quoting) passed on the first run.
+binlog; incremental republish behaves like the shim flow. CI exercised the
+direct flow from every host with execution on the ubuntu-x64 validate job;
+the Windows-host leg (cmd.exe Exec quoting) passed on the first run. After
+the default flip, every plain Linux target in the matrix (glibc/musl,
+x64/arm64/armv7, net8/net9/net10) links via the direct flow, with the
+`-shim` pseudo-targets keeping the escape hatch covered.
 
 Bake coverage beyond Hello World, in both flows for A/B parity:
 

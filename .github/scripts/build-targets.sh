@@ -56,17 +56,18 @@ for target in "${TARGET_ARRAY[@]}"; do
   # Pseudo-target decorations select publish variants of the same RID; the
   # artifact directory keeps the decorated name so the validate job can
   # exercise each variant:
-  #   <rid>-direct   - the experimental AotAnywhereDirectLink flag (zig is
-  #                    invoked directly instead of through the clang shim)
+  #   <rid>-shim     - AotAnywhereDirectLink=false, the escape hatch back to
+  #                    the clang-shim link flow (direct zig invocation is the
+  #                    default for Linux targets)
   #   lib-<rid>      - test/HelloLib, a NativeLib=Shared library
   #   <rid>-selftest - Hello with AotAnywhereSelfTest=true: net10.0 and real
   #                    ICU (no InvariantGlobalization), zlib and OpenSSL
   #                    exercised at run time via --selftest
   rid="$target"
-  direct_args=()
-  if [[ "$rid" == *-direct ]]; then
-    rid="${rid%-direct}"
-    direct_args=("-p:AotAnywhereDirectLink=true")
+  flow_args=()
+  if [[ "$rid" == *-shim ]]; then
+    rid="${rid%-shim}"
+    flow_args=("-p:AotAnywhereDirectLink=false")
   fi
 
   project="test/Hello.csproj"
@@ -91,7 +92,7 @@ for target in "${TARGET_ARRAY[@]}"; do
     publish_log="/tmp/publish-$group_id-$target.log"
     if dotnet publish "$project" \
       -r "$rid" \
-      ${direct_args[@]+"${direct_args[@]}"} \
+      ${flow_args[@]+"${flow_args[@]}"} \
       ${variant_args[@]+"${variant_args[@]}"} \
       -c Release \
       -p:BaseIntermediateOutputPath="$obj_dir" \
@@ -100,12 +101,18 @@ for target in "${TARGET_ARRAY[@]}"; do
       echo "✅ Cross-compilation build succeeded for $target"
       build_result="success"
 
-      # Tripwire for the direct-link pseudo-targets: the clang personality
-      # prints this marker whenever it handles a Linux link, so its presence
-      # means the publish silently fell back to the shim flow instead of
-      # linking with zig directly.
-      if [[ "$target" == *-direct ]] && grep -Fq "clang shim] Detected Linux compilation target" "$publish_log"; then
-        echo "❌ Direct-link publish for $target fell back to the clang shim link"
+      # Tripwire: the clang personality prints this marker whenever it
+      # handles a Linux link. Default publishes use the direct zig link, so
+      # the marker means a silent fallback to the shim flow; conversely a
+      # -shim escape-hatch publish that lacks the marker did not actually
+      # route through the shim.
+      if [[ "$target" == *-shim ]]; then
+        if ! grep -Fq "clang shim] Detected Linux compilation target" "$publish_log"; then
+          echo "❌ Escape-hatch publish for $target did not go through the clang shim link"
+          build_result="failed"
+        fi
+      elif grep -Fq "clang shim] Detected Linux compilation target" "$publish_log"; then
+        echo "❌ Publish for $target fell back to the clang shim link (direct link is the default)"
         build_result="failed"
       fi
     else

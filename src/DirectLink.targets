@@ -1,8 +1,10 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
-  <!-- Experimental (AotAnywhereDirectLink=true): link by invoking zig
+  <!-- The default link flow for Linux targets: link by invoking zig
        directly instead of having the ILC targets call a clang-impersonating
-       shim found on PATH.
+       shim found on PATH. AotAnywhereDirectLink=false is the escape hatch
+       back to the shim flow (which remains the flow for macOS and Windows
+       targets, and for NativeLib=Static).
 
        The ILC SDK targets remain the source of truth for WHAT to link:
        SetupOSSpecificProps still computes $(NativeObject), @(NativeLibrary)
@@ -20,15 +22,15 @@
        once it has produced $(NativeBinary), LinkNative's incremental check
        finds its output up to date and skips itself.
 
-       Scope of the prototype: Linux targets (glibc and musl), executables
-       and shared libraries. Other RIDs and NativeLib=Static keep the shim
-       flow. SetupOSSpecificProps' linker probes still require the clang
-       shim on PATH, so the shim materialization is unchanged; the objcopy
+       Scope: Linux targets (glibc and musl), executables and shared
+       libraries. Other RIDs and NativeLib=Static keep the shim flow.
+       SetupOSSpecificProps' linker probes still require the clang shim on
+       PATH, so the shim materialization is unchanged; the objcopy
        personality also still performs the symbol strip (zig cannot strip
        ELF), invoked here by absolute path. -->
 
   <PropertyGroup>
-    <AotAnywhereDirectLink Condition="'$(AotAnywhereDirectLink)' == ''">false</AotAnywhereDirectLink>
+    <AotAnywhereDirectLink Condition="'$(AotAnywhereDirectLink)' == ''">true</AotAnywhereDirectLink>
     <_AotAnywhereDirectLinkActive>false</_AotAnywhereDirectLinkActive>
     <_AotAnywhereDirectLinkActive Condition="'$(AotAnywhereDirectLink)' == 'true' and $(RuntimeIdentifier.StartsWith('linux')) and '$(NativeLib)' != 'Static'">true</_AotAnywhereDirectLinkActive>
   </PropertyGroup>
@@ -87,7 +89,7 @@
 
     <MakeDir Directories="$([System.IO.Path]::GetDirectoryName($(NativeBinary)))" />
 
-    <Message Importance="high" Text="AotAnywhere: linking $(NativeBinary) with zig directly (experimental AotAnywhereDirectLink)" />
+    <Message Importance="high" Text="AotAnywhere: linking $(NativeBinary) with zig directly" />
 
     <Exec Command="&quot;$(_AotAnywhereZigExe)&quot; cc @(_AotAnywhereLinkArg, ' ')"
           CustomWarningRegularExpression="$(IlcCppLinkerCustomWarningRegularExpression)" />

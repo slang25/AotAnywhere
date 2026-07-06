@@ -168,19 +168,22 @@ Note: Using invariant globalization disables culture-specific formatting, sortin
 
 ### The clang shim
 
-Cross-compilation works by putting a small `clang` shim on `PATH` that rewrites the linker invocation and forwards it to `zig cc`. It is a multi-call binary: materialized as `llvm-objcopy` it performs the Linux symbol strip, and materialized as `link` it stands in for MSVC's linker when targeting Windows from a non-Windows host. The package ships this shim **prebuilt** for the common host RIDs (Windows x86/x64, macOS x64/arm64, Linux x64/arm64) under `build/shim/<host-rid>`, so a normal build just copies it and does no compilation. On any other host the shim is compiled on demand from the bundled `clang_shim.zig` with the Zig toolchain. Pass `/p:UsePrebuiltClangShim=false` to force the compile-on-demand path.
+The package materializes a small multi-call shim binary and puts it on `PATH`. Its roles: materialized as `clang` it satisfies the ILC SDK's linker probes and rewrites macOS link invocations to `zig cc` (and Linux ones too, when the `AotAnywhereDirectLink=false` escape hatch routes them this way — the Linux default links zig directly from MSBuild without it); materialized as `llvm-objcopy` it performs the Linux symbol strip; materialized as `link` it stands in for MSVC's linker when targeting Windows from a non-Windows host. The package ships this shim **prebuilt** for the common host RIDs (Windows x86/x64, macOS x64/arm64, Linux x64/arm64) under `build/shim/<host-rid>`, so a normal build just copies it and does no compilation. On any other host the shim is compiled on demand from the bundled `clang_shim.zig` with the Zig toolchain. Pass `/p:UsePrebuiltClangShim=false` to force the compile-on-demand path.
 
 The prebuilt shims are cross-compiled from a single machine at pack time (see `BuildClangShims` in `AotAnywhere.nuproj`); Zig makes producing all host binaries from one host trivial.
 
-### Experimental: direct zig linking for Linux targets
+### Direct zig linking for Linux targets
 
-`/p:AotAnywhereDirectLink=true` links Linux targets by invoking `zig cc`
-directly from MSBuild instead of routing the SDK's link step through the
-clang shim. The SDK still computes what to link; only the invocation changes,
-and the full zig command line becomes visible in build logs. Output should be
-equivalent to the default flow. See
-[docs/direct-link-prototype.md](docs/direct-link-prototype.md) for the design
-and its current limits. Off by default; other targets are unaffected.
+Linux targets are linked by invoking `zig cc` directly from MSBuild — the
+SDK still computes everything that goes into the link, and the full zig
+command line is visible in build logs and binlogs. Set
+`/p:AotAnywhereDirectLink=false` to route the link through the clang shim
+instead: that is the previous behavior, kept as an escape hatch while the
+direct flow beds in, and it produces equivalent output (byte-identical in
+our shared-library tests). macOS and Windows targets always link through
+the shim personalities. See
+[docs/direct-link-prototype.md](docs/direct-link-prototype.md) for the
+design.
 
 ### Using your own Zig
 

@@ -37,13 +37,14 @@ strategy:
       # macos-15-intel and macos-latest hosts
 ```
 
-Beyond the plain RIDs, every host also publishes decorated `linux-x64` variants
-(see `build-targets.sh`): `linux-x64-direct` (the experimental
-`AotAnywhereDirectLink` flag), `lib-linux-x64[-direct]` (a `NativeLib=Shared`
-library, loaded and called via python ctypes during validation) and
-`linux-x64-selftest[-direct]` (a net10.0 build exercising real ICU, zlib and
-OpenSSL at run time via `--selftest`). The `-direct`/non-direct pairs give A/B
-parity between the shim and direct link flows.
+Beyond the plain RIDs — which link Linux targets via the default direct zig
+invocation — every host also publishes decorated `linux-x64` variants (see
+`build-targets.sh`): `linux-x64-shim` (`AotAnywhereDirectLink=false`, the
+escape hatch back to the clang-shim link flow), `lib-linux-x64[-shim]` (a
+`NativeLib=Shared` library, loaded and called via python ctypes during
+validation) and `linux-x64-selftest[-shim]` (a net10.0 build exercising real
+ICU, zlib and OpenSSL at run time via `--selftest`). The `-shim`/plain pairs
+give A/B parity between the two link flows until the shim flow is retired.
 
 ### 2. Build Process
 For each host-target combination:
