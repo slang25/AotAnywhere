@@ -225,6 +225,21 @@
        header there for the design. -->
   <Import Project="$(MSBuildThisFileDirectory)DirectLink.targets" />
 
+  <!-- The SDK's _CopyAotSymbols assumes the host and target symbol layouts
+       match: on Windows hosts it looks for $(TargetName)$(NativeSymbolExt)
+       (the MSVC .pdb shape), but a Unix shared library's sidecar is named
+       $(TargetName)$(NativeBinaryExt)$(NativeSymbolExt) - HelloLib.so.dbg -
+       so from a Windows host it never reaches the publish directory.
+       Executables are unaffected (their NativeBinaryExt is empty). Copy the
+       sidecar ourselves after _CopyAotSymbols has run. -->
+  <Target Name="AotAnywhereCopySharedLibrarySymbols"
+          AfterTargets="_CopyAotSymbols"
+          Condition="$([MSBuild]::IsOSPlatform('Windows')) and !$(RuntimeIdentifier.StartsWith('win')) and '$(NativeBinaryExt)' != '' and '$(CopyOutputSymbolsToPublishDirectory)' != 'false' and Exists('$(NativeBinary)$(NativeSymbolExt)')">
+
+    <Copy SourceFiles="$(NativeBinary)$(NativeSymbolExt)" DestinationFolder="$(PublishDir)" />
+
+  </Target>
+
   <!-- For Windows targets lld writes $(TargetName).pdb next to the binary
        (the name the PE's CodeView record references), but the SDK's
        _CopyAotSymbols only knows MSVC's host-Windows layout and misses it.
