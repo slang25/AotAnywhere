@@ -20,7 +20,9 @@
 
     <!-- The shim is always materialized into the intermediate dir (so we can
          guarantee the executable bit regardless of how the package was
-         packed), and that dir is what we put on PATH for the ILC link. -->
+         packed). The ILC targets reach it there by absolute path on
+         non-Windows hosts, or via this dir on PATH on Windows hosts (see
+         PointLinkerToShim for why). -->
     <ClangShimDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'aotanywhere'))</ClangShimDir>
     <ClangShimBinary Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(ClangShimDir)clang.exe</ClangShimBinary>
     <ClangShimBinary Condition="'$(ClangShimBinary)' == ''">$(ClangShimDir)clang</ClangShimBinary>
@@ -152,11 +154,40 @@
 
   </Target>
 
-  <Target Name="SetPathToClang"
+  <!-- Make the materialized shim resolvable to SetupOSSpecificProps' tool
+       probes (in Microsoft.NETCore.Native.Unix.targets, used for Linux and
+       macOS targets), which run `command -v "$(CppLinker)"` and the same for
+       the objcopy symbol stripper - `where /Q` on Windows hosts.
+
+       Non-Windows hosts: `command -v` accepts an absolute path, so point
+       CppLinker (Linux and macOS targets) and ObjCopyName (Linux) straight at
+       the shim - no PATH mutation. Linux targets only reach the clang
+       personality as a probe (the actual link is the direct zig invocation);
+       the objcopy personality (llvm-objcopy) serves the Linux symbol strip.
+
+       Windows hosts: `where /Q` rejects an absolute path - it reads the
+       drive-letter colon as its own path:pattern delimiter and fails with
+       "Invalid pattern is specified in path:pattern" - so the shim must be
+       found by bare name (CppLinker's `clang`, ObjCopyName's `llvm-objcopy`,
+       both defaults) with its directory prepended to PATH, as before.
+
+       Windows *targets* are handled elsewhere either way: win-cross points
+       CppLinker at the link personality by absolute path in
+       OverwriteTargetTriple and runs no PATH probe, and a Windows host links
+       win-* natively without importing this file. -->
+  <Target Name="PointLinkerToShim"
           DependsOnTargets="CopyPrebuiltClangShim;CompileClangShim"
           BeforeTargets="SetupOSSpecificProps">
 
-    <PrependPath Value="$(ClangShimDir)" />
+    <PropertyGroup Condition="!$([MSBuild]::IsOSPlatform('Windows')) and !$(RuntimeIdentifier.StartsWith('win'))">
+      <CppLinker>$(ClangShimBinary)</CppLinker>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="!$([MSBuild]::IsOSPlatform('Windows')) and $(RuntimeIdentifier.StartsWith('linux'))">
+      <ObjCopyName>$(ObjCopyShimBinary)</ObjCopyName>
+    </PropertyGroup>
+
+    <PrependPath Condition="$([MSBuild]::IsOSPlatform('Windows'))" Value="$(ClangShimDir)" />
 
   </Target>
 
