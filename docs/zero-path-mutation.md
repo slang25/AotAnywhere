@@ -1,25 +1,26 @@
 # Zero PATH mutation (spike)
 
 This is the design writeup for ROADMAP item #6. It records where the
-environment-mutation arc stands, what the single remaining PATH mutation is,
-and which of the candidate fixes actually removes it. The short version:
+environment-mutation arc stands, what the single remaining PATH mutation is, and
+why — after measuring the options on a real Windows runner — it is the terminal
+state rather than something we can remove. The short version:
 
 - **The last PATH mutation is a single, process-scoped `PATH` prepend that only
   happens on a Windows *host*.** Non-Windows hosts already run with zero PATH
   mutation (`PointLinkerToShim` points the SDK probes at the shim by absolute
   path). Linux and macOS *hosts* are done.
-- **Removing it cleanly needs the shim resolvable by a colon-free name** so the
-  `where /Q` probe accepts it without a prepend. The only option that both
-  satisfies the probe *and* survives being exec'd as the linker is a **relative
-  path** — which likely works but rests on Windows `where.exe` semantics this
-  spike could not run (the author is on macOS). It should be validated on the
-  Windows leg of `cross-platform-validation.yml` before it is trusted.
+- **Removing it would need the shim resolvable by a colon-free name** that the
+  SDK's `where /Q` linker probe accepts. **A Windows-runner experiment showed no
+  such form exists** (see [The `where /Q` experiment](#the-where-q-experiment)):
+  every colon-free path `where` was given failed to resolve, and it cannot take
+  the absolute path because of the drive colon. The bare-name-on-PATH form is
+  the only one that works, which is exactly what the prepend provides. So the
+  prepend stays — this is the "no, because X" outcome the ROADMAP anticipated.
 - **The `AOTANYWHERE_ZIG` / `AOTANYWHERE_APPLE_SYSROOT` env channels can be
-  collapsed** into `LinkerArg`-injected flags (the same channel the `--target`
-  triple already rides), but the payoff is marginal — they are namespaced,
-  process-scoped env vars, not PATH — and it adds parse-and-strip surface to the
-  shim's link hot path. Recommend doing it only if bundled with the PATH change,
-  not as standalone churn.
+  collapsed** into `LinkerArg`-injected flags, but that does not touch PATH (they
+  are namespaced, process-scoped env vars, not PATH) and it adds parse-and-strip
+  surface to the shim's link hot path. It is optional cleanup, not a path to the
+  headline goal, and is deferred.
 
 See also the "Design constraints discovered" and "Not covered" sections of
 [`direct-link.md`](direct-link.md), which this document extends.
@@ -60,92 +61,83 @@ delimiter and fails with `Invalid pattern is specified in "path:pattern"`. So on
 a Windows host the shim has to be found by a bare name (`clang`,
 `llvm-objcopy` — the SDK defaults) with its directory prepended to `$PATH`.
 
-The probe `Exec` is unconditional and the value it probes (`$(CppLinker)`) is the
-same value later exec'd as the real linker, so we cannot skip the probe and
-cannot give it a probe-only value that differs from the exec path.
+The probe `Exec` is unconditional and runs with no `WorkingDirectory`, and the
+value it probes (`$(CppLinker)`) is the same value later exec'd as the real
+linker — so we cannot skip the probe, cannot give it a probe-only value that
+differs from the exec path, and cannot rely on a particular working directory.
+
+## The `where /Q` experiment
+
+The one open question was whether *any* colon-free form of the shim path would
+satisfy `where /Q`. Measured directly on `windows-latest` through an MSBuild
+`<Exec>` (the same task the SDK uses), against a real file. Exit `0` = `where`
+resolved it.
+
+| # | Form probed | Exit | Verdict |
+| --- | --- | --- | --- |
+| 0 | bare `clang.exe`, dir on `PATH` | **0** | today's approach — works |
+| 1 | `C:\…\clang.exe` (drive colon) | 2 | baseline failure (`path:pattern` misparse) |
+| 2 | `\…\clang.exe` (drive-relative, colon-free) | 1 | not found |
+| 3 | `C:/…/clang.exe` (forward slashes) | 2 | colon still present — fails |
+| 4 | `where-probe\clang.exe` (relative), cwd = containing dir | 1 | not found |
+| 5 | `where-probe\clang.exe` (relative), cwd = elsewhere | 1 | not found |
+| 6 | `\…\where-probe:clang.exe` (`where` `dir:pattern`, colon-free dir) | 1 | not found |
+
+The finding is unambiguous: **`where` resolves a bare filename (via `PATH` or the
+current directory) but not any path that carries a directory component**, colon
+or not. Removing the colon does not help — forms 2, 4, 5 and 6 are all colon-free
+and all fail. There is therefore no "colon-free linker name" that lets the shim
+sit in its own intermediate directory and still be found without putting that
+directory on `PATH`.
+
+(The experiment lived in `eng/where-probe/` and `.github/workflows/where-probe.yml`
+and was removed once it had answered the question; this table is its result.)
 
 ## Options considered
 
-### A. Relative, colon-free `CppLinker` — recommended, pending validation
+### A. Colon-free `CppLinker` path — rejected (measured)
 
-Point `CppLinker`/`ObjCopyName` at the shim by a path *relative* to the project
-directory (the working directory of the probe and link `Exec`s), e.g.
-`$(IntermediateOutputPath)aotanywhere\clang.exe`. It contains no drive colon, so
-`where /Q` should not misparse it, and a relative path exec's fine with the
-project dir as cwd.
-
-Open questions that need a Windows box (the whole reason this stays a spike):
-
-- **Does `where.exe` resolve a relative multi-segment path?** `where` splits a
-  pattern containing a separator into `<dir>\<filename>` and searches `<dir>`;
-  that directory is expected to resolve relative to cwd, but this was not
-  verified here.
-- **Is cwd guaranteed to be `$(MSBuildProjectDirectory)` for the probe `Exec`?**
-  MSBuild's `Exec` defaults its working directory to the project directory, and
-  the SDK probe sets no `WorkingDirectory`, so this should hold — but it is an
-  assumption worth asserting in the test.
-- **`$(IntermediateOutputPath)` can be absolute.** Artifacts-output layouts
-  (`ArtifactsPath`) and explicit `BaseIntermediateOutputPath` overrides make it
-  rooted again, reintroducing the colon. The change must therefore be **guarded**
-  — use the relative form only when the shim path is not rooted
-  (`[System.IO.Path]::IsPathRooted`), and fall back to the current prepend
-  otherwise. In the common (default) layout the prepend disappears; in the
-  rooted-output layout it stays. That is still a strict improvement, and it is
-  the honest shape given the constraint.
-
-Sketch (in `PointLinkerToShim`, replacing the unconditional `<PrependPath>`):
-
-```xml
-<PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
-  <_AotAnywhereShimRelDir>$(IntermediateOutputPath)aotanywhere\</_AotAnywhereShimRelDir>
-  <_AotAnywhereShimColonFree
-    Condition="!$([System.IO.Path]::IsPathRooted('$(IntermediateOutputPath)'))">true</_AotAnywhereShimColonFree>
-</PropertyGroup>
-<!-- colon-free: point the probe at the relative path, no PATH mutation -->
-<PropertyGroup Condition="... '$(_AotAnywhereShimColonFree)' == 'true'">
-  <CppLinker>$(_AotAnywhereShimRelDir)clang.exe</CppLinker>
-  <ObjCopyName Condition="$(RuntimeIdentifier.StartsWith('linux'))">$(_AotAnywhereShimRelDir)llvm-objcopy.exe</ObjCopyName>
-</PropertyGroup>
-<!-- fallback: rooted intermediate path, keep the prepend as today -->
-<PrependPath Condition="... '$(_AotAnywhereShimColonFree)' != 'true'" Value="$(ClangShimDir)" />
-```
+Point `CppLinker`/`ObjCopyName` at the shim by a colon-free path (drive-relative,
+project-relative, or `where`'s `dir:pattern`). The experiment above shows `where`
+rejects all of them: it will not resolve a value containing a directory
+component. Dead end.
 
 ### B. `where "$ENVVAR:pattern"` — rejected
 
 `where` accepts `where "$SOMEVAR:clang"` (search the `;`-list in env var
-`SOMEVAR` for `clang`) — colon-free in the sense that matters to the probe. But
-`$(CppLinker)` is also the string exec'd as the real linker for macOS/Windows
-targets, and `"$SOMEVAR:clang" args` is not a runnable executable. Probe-name and
-exec-path are the same property; they cannot diverge. Rejected.
+`SOMEVAR`). But `$(CppLinker)` is also exec'd as the real linker, and
+`"$SOMEVAR:clang" args` is not a runnable executable. Probe-name and exec-path
+are the same property; they cannot diverge. (This is essentially a namespaced
+`PATH` in an env var anyway — not less mutation, just spelled differently.)
 
 ### C. Skip / pre-satisfy the probe — rejected
 
 The probe `Exec` is unconditional and overwrites `_WhereLinker` with its own
 result, so a pre-set value cannot survive, and there is no package hook to
-condition the `Exec` out. Rejected.
+condition the `Exec` out.
 
-### D. Drop a bare-named shim into the project directory — rejected
+### D. Drop a bare-named shim into the current directory — rejected
 
-`where` (and cmd's command resolution) search the current directory, so a bare
-`clang.exe` sitting in the project root resolves for both probe and exec with no
-PATH mutation. But writing a build artifact into the consumer's project root is
-worse than a scoped, process-only prepend of our own obj directory. Rejected.
+`where` searches the current directory, so a bare `clang.exe` in the build's cwd
+resolves with no `PATH` mutation — but the probe's cwd is the consumer's launch
+directory (the `Exec` sets no `WorkingDirectory`), not ours, and writing a build
+artifact there would be worse than a scoped, process-only prepend of our own obj
+directory anyway.
 
-### E. Accept the prepend as terminal — the fallback outcome
+### E. Accept the prepend as terminal — the outcome
 
-If A does not pan out on Windows, the honest conclusion is that the current state
-*is* the terminal one: a single, process-scoped prepend of the shim's own
-intermediate directory, on Windows hosts only, gated behind the SDK's own
-`where /Q` limitation. It mutates nothing persistent and nothing outside the
-build process. This is the "no, because `where /Q` cannot take an absolute path"
-writeup the ROADMAP anticipated.
+The current state *is* the terminal one: a single, process-scoped prepend of the
+shim's own intermediate directory, on Windows hosts only, gated behind the SDK's
+own `where /Q` limitation. It mutates nothing persistent and nothing outside the
+build process. Short of the SDK gaining a way to pass the linker by absolute path
+on Windows (an upstream ask — see ROADMAP #7), this is as far as the arc goes.
 
-## Collapsing the env channels
+## Collapsing the env channels (optional, deferred)
 
-Independently of the PATH question, `AOTANYWHERE_ZIG` and
-`AOTANYWHERE_APPLE_SYSROOT` could move from process-env vars to flags injected
-through `@(LinkerArg)` — the same channel `OverwriteTargetTriple` already uses
-for `--target=<triple>`, which reaches **both** shim personalities that need it:
+Independently of PATH, `AOTANYWHERE_ZIG` and `AOTANYWHERE_APPLE_SYSROOT` could
+move from process-env vars to flags injected through `@(LinkerArg)` — the same
+channel `OverwriteTargetTriple` already uses for `--target=<triple>`, which
+reaches **both** shim personalities that need it:
 
 - The `clang` personality (macOS targets) gets `LinkerArg` items on its command
   line directly.
@@ -156,35 +148,29 @@ for `--target=<triple>`, which reaches **both** shim personalities that need it:
 - The `objcopy` personality needs neither var — it does its own ELF surgery and
   never execs zig — so it needs no channel at all.
 
-Feasibility is therefore *not* the blocker (an earlier read of this suggested the
-`link` rsp path was entangled; it is not — `LinkerArg` covers it). The blockers
-are judgement calls:
+Feasibility is not the blocker. The reasons to leave it are:
 
-- **Marginal benefit.** These are namespaced, process-scoped env vars, not
-  PATH. `direct-link.md` already calls this trade "cleaner, but still not zero
-  mutation."
-- **Added risk on the link hot path.** Each shim personality would have to
-  recognize the new flags and *strip* them before forwarding to `zig cc` (an
-  unrecognized `--aotanywhere-*` flag reaching zig fails the link). That is new
-  parse-and-strip surface in the most correctness-sensitive code in the repo.
-- **Fallback still required.** The `zig`-on-PATH fallback (external zig,
-  degraded restore) must survive, so the env var read cannot simply be deleted.
+- **It does not advance the headline.** These are namespaced, process-scoped env
+  vars, not PATH; with the PATH prepend proven terminal, collapsing them does not
+  get us to "zero mutation". `direct-link.md` already calls the trade "cleaner,
+  but still not zero mutation."
+- **Added risk on the link hot path.** Each personality would have to recognize
+  the new flags and *strip* them before forwarding to `zig cc` (an unrecognized
+  `--aotanywhere-*` flag reaching zig fails the link) — new parse-and-strip
+  surface in the most correctness-sensitive code in the repo.
+- **Fallback still required.** The `zig`-on-PATH fallback (external zig, degraded
+  restore) must survive, so the env read cannot simply be deleted.
 
-Recommendation: collapse the channels only if implementing option A anyway, so
-the shim parsing changes and the Windows validation land together. Both the
-`clang` (macOS target) and `link` (win-x64 target) paths are exercisable from a
-Linux/macOS host, so this part is testable without a Windows host — unlike the
-PATH prepend itself.
+Both the `clang` (macOS target) and `link` (win-x64 target) paths are exercisable
+from a Linux/macOS host, so this is testable without a Windows host if it is ever
+picked up — but it is deferred as marginal.
 
-## What needs a Windows host to validate
+## Conclusion
 
-- Option A's `where /Q "<relative>\clang.exe"` resolving with cwd =
-  project directory, for a Linux target (clang probe) and with `StripSymbols`
-  on (objcopy probe).
-- That the relative `CppLinker`/`ObjCopyName` also *exec* correctly at link time
-  from the same cwd.
-- The rooted-`IntermediateOutputPath` fallback still prepends and still links.
-
-The `build`/`validate` matrix in `cross-platform-validation.yml` already links
-from a Windows host to Linux and macOS targets, so wiring a Windows-host leg with
-a non-default (and a rooted) `IntermediateOutputPath` is the concrete next step.
+The zero-PATH-mutation arc is complete to the extent the tooling allows: every
+host but Windows runs with no PATH mutation, and the Windows-host prepend is
+irreducible given the SDK's `where /Q` probe (proven by experiment, not
+assumption). The only routes to removing it are upstream: a dotnet/runtime hook
+to pass the Windows linker by absolute path, or to skip the probe — which folds
+into the broader "override the link invocation" ask in ROADMAP #7. The env-channel
+collapse remains available as optional, non-PATH cleanup.
