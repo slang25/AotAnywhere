@@ -6,11 +6,9 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Bump the ZigVersion (Vezel.Zig.Toolsets) pin in the three files that must stay in sync",
+      "description": "Bump the single ZigVersion (Vezel.Zig.Toolsets) pin; every other file derives from it",
       "managerFilePatterns": [
-        "/^src/Crosscompile\\.targets$/",
-        "/^src/AotAnywhere\\.nuproj$/",
-        "/^src/Sdk/Sdk\\.props$/"
+        "/^src/ZigVersion\\.props$/"
       ],
       "matchStrings": [
         "<ZigVersion[^>]*>(?<currentValue>[^<]+)</ZigVersion>"

@@ -21,10 +21,12 @@
          version can be pinned independently if ever needed. -->
     <AotAnywherePackageVersion Condition="'$(AotAnywherePackageVersion)' == ''">__AOTANYWHERE_PACKAGE_VERSION__</AotAnywherePackageVersion>
 
-    <!-- These defaults are duplicated from Crosscompile.targets (keep in sync;
-         see docs/zig-version-bump.md): on the very first restore the package's
-         build/ targets are not imported yet, so they must be known here. -->
-    <ZigVersion Condition="'$(ZigVersion)' == ''">0.16.0.2</ZigVersion>
+    <!-- On the very first restore the package's build/ targets (which import
+         ZigVersion.props) are not imported yet, so ZigVersion must be known
+         here too. Rather than duplicate the literal, it is baked in at pack
+         time from the single ZigVersion.props pin (BakeSdkProps in the nuproj
+         substitutes the placeholder below); see docs/zig-version-bump.md. -->
+    <ZigVersion Condition="'$(ZigVersion)' == ''">__AOTANYWHERE_ZIG_VERSION__</ZigVersion>
     <HostRuntimeIdentifier Condition="'$(HostRuntimeIdentifier)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</HostRuntimeIdentifier>
 
     <!-- Tells Crosscompile.targets its own (restore-invisible) Zig reference is
