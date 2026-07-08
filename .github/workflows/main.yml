@@ -11,6 +11,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  zig_version_sync:
+    runs-on: ubuntu-latest
+    name: ZigVersion drift guard
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+      # Fails the PR if the out-of-band ZigVersion pins (the setup-zig step in
+      # apple-sysroot-drift.yml and the prose in .copilot-instructions.md) drift
+      # from the single source of truth in src/ZigVersion.props.
+      - name: Check ZigVersion is in sync
+        run: ./eng/check-zig-version-sync.sh
+
   build_and_test:
     strategy:
       matrix:

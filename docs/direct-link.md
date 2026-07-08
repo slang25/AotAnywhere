@@ -61,7 +61,9 @@ whether to go further down this road:
   specified in "path:pattern"`, so on Windows hosts the shim must be found by
   bare name with its directory prepended to PATH, as before. Eliminating the
   PATH prepend on Windows too would need a linker resolvable by a
-  colon-free name — out of scope here. Windows *targets* are handled either
+  colon-free name — spiked separately in
+  [`zero-path-mutation.md`](zero-path-mutation.md), out of scope here. Windows
+  *targets* are handled either
   way: win-cross already points `CppLinker` at the link shim by absolute path
   in `OverwriteTargetTriple` and runs no PATH probe, and a Windows host links
   win-* natively without importing the package.
@@ -136,7 +138,8 @@ Bake coverage beyond Hello World, in both flows for A/B parity:
   resolvable by a colon-free name. Plus collapsing the process-environment
   channels (`AOTANYWHERE_ZIG`, `AOTANYWHERE_APPLE_SYSROOT`), which trade PATH
   mutation for a namespaced env var the shim reads — cleaner, but still not
-  zero mutation.
+  zero mutation. Both are spiked in
+  [`zero-path-mutation.md`](zero-path-mutation.md).
 - `StaticICULinking`/`StaticOpenSslLinking` invoke `build-local.sh` with
   `CC=$(CppLinker)`, now the shim's absolute path (`PointLinkerToShim`);
   they keep working because the shim forwards compile-only invocations

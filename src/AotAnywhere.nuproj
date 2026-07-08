@@ -1,11 +1,14 @@
 <Project Sdk="Microsoft.Build.NoTargets">
+
+  <!-- Zig used to cross-compile the prebuilt shims below (BuildClangShims) and
+       to run the shim unit tests (TestShims). Sourced from the single pin in
+       ZigVersion.props, the same file the packed targets import. -->
+  <Import Project="ZigVersion.props" />
+
   <PropertyGroup>
 
     <TargetFramework>netstandard2.0</TargetFramework>
 
-    <!-- Zig used to cross-compile the prebuilt shims below (see BuildClangShims).
-         Keep this in sync with the ZigVersion default in Crosscompile.targets. -->
-    <ZigVersion Condition="'$(ZigVersion)' == ''">0.16.0.2</ZigVersion>
     <PackHostRuntimeIdentifier Condition="'$(PackHostRuntimeIdentifier)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</PackHostRuntimeIdentifier>
     <ShimIntermediateDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(BaseIntermediateOutputPath)', 'shim'))</ShimIntermediateDir>
 
@@ -21,6 +24,13 @@
     <!-- Zig is only needed to build the shims at pack time (PrivateAssets),
          so the package itself has no dependencies to express. -->
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+
+    <!-- build/ZigVersion.props is imported explicitly by Crosscompile.targets,
+         not through NuGet's build/<id>.props auto-import convention. Its
+         presence makes NuGet note the (intentional) absence of a conventional
+         build/StuDev.AotAnywhere.props; the package's auto-import entry point is
+         the .targets, so suppress the advisory. -->
+    <NoWarn>$(NoWarn);NU5129</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,6 +39,10 @@
       <PackagePath>build</PackagePath>
     </None>
     <None Include="Crosscompile.targets">
+      <Pack>true</Pack>
+      <PackagePath>build</PackagePath>
+    </None>
+    <None Include="ZigVersion.props">
       <Pack>true</Pack>
       <PackagePath>build</PackagePath>
     </None>
@@ -98,6 +112,14 @@
                    Destination="$(_BakedSdkProps)"
                    Find="__AOTANYWHERE_PACKAGE_VERSION__"
                    ReplaceWith="$(Version)" />
+
+    <!-- Bake the single ZigVersion pin (from ZigVersion.props, imported above)
+         into the placeholder so Sdk.props carries no second copy of the
+         literal. -->
+    <ReplaceInFile Source="$(_BakedSdkProps)"
+                   Destination="$(_BakedSdkProps)"
+                   Find="__AOTANYWHERE_ZIG_VERSION__"
+                   ReplaceWith="$(ZigVersion)" />
 
     <ItemGroup>
       <None Include="$(_BakedSdkProps)">

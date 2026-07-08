@@ -38,8 +38,8 @@ jobs:
 
       # The generator drops symbols that zig's bundled libSystem stub already
       # resolves, so the zig here must be the same upstream release the package
-      # ships (ZigVersion 0.16.0.2 in Crosscompile.targets == upstream 0.16.0).
-      # Keep this pinned version in step with ZigVersion on every bump.
+      # ships (ZigVersion 0.16.0.2 in src/ZigVersion.props == upstream 0.16.0).
+      # The zig-version-sync CI guard fails the PR if this drifts from that pin.
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
         with:

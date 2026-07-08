@@ -1,9 +1,12 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
+  <!-- Single source of truth for ZigVersion (packed alongside this file into
+       build/). Sets the default only if a consumer hasn't overridden it. -->
+  <Import Project="$(MSBuildThisFileDirectory)ZigVersion.props" />
+
   <PropertyGroup>
     <DisableUnsupportedError>true</DisableUnsupportedError>
     <HostRuntimeIdentifier Condition="'$(HostRuntimeIdentifier)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</HostRuntimeIdentifier>
-    <ZigVersion Condition="'$(ZigVersion)' == ''">0.16.0.2</ZigVersion>
     <UseExternalZig Condition="'$(UseExternalZig)' == ''">false</UseExternalZig>
 
     <!-- The package ships a shim prebuilt for each common host under

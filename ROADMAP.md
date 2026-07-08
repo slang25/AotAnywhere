@@ -45,7 +45,13 @@ personalities, the NuGet consumption model, and version/drift maintenance.
    `where /Q` rejects a drive-lettered absolute path). Spike a colon-free linker
    name so the shim resolves by bare name without a prepend, then collapse the
    `AOTANYWHERE_ZIG` / `AOTANYWHERE_APPLE_SYSROOT` env channels. Finishes the
-   arc that's ~90% done.
+   arc that's ~90% done. **Spiked & resolved:** see `docs/zero-path-mutation.md`.
+   A Windows-runner experiment proved `where /Q` accepts no colon-free path with
+   a directory component (drive-relative, project-relative, forward-slash and
+   `dir:pattern` all fail), so the prepend is irreducible without an upstream SDK
+   hook (folds into #7). The env-channel collapse is feasible via `LinkerArg` but
+   does not touch PATH, so it is deferred as marginal. This item is closed as
+   "no, because `where /Q`".
 7. **Upstream dotnet/runtime ask (exploratory).** The shim exists because ILC's
    linker probes are unskippable and there's no hook to override the link
    invocation. Draft the extension-point proposal / issue. Long shot, but the
@@ -75,6 +81,8 @@ personalities, the NuGet consumption model, and version/drift maintenance.
 
 ## Suggested ordering
 
-**#2 and #1 first** (adoption friction), then **#6** (finish the zero-mutation
-arc already in progress), then **#4 / #5** as the meaty target-quality work,
-with **#7 and #9** as background spikes.
+**#2 and #1 first** (adoption friction). **#6 is now closed** — the zero-mutation
+arc is as complete as the SDK's `where /Q` probe allows (see
+`docs/zero-path-mutation.md`); its only remaining route folds into **#7**. That
+leaves **#4 / #5** as the meaty target-quality work, with **#7 and #9** as
+background spikes.

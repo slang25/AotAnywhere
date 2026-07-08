@@ -1,0 +1,24 @@
+<Project>
+
+  <!-- The single source of truth for the pinned Zig toolchain version (the
+       Vezel.Zig.Toolsets package version: the upstream zig version plus a
+       packaging suffix, e.g. 0.16.0.2 == upstream zig 0.16.0).
+
+       Everything that needs the value derives it from here:
+         - Crosscompile.targets and AotAnywhere.nuproj <Import> this file.
+         - Sdk/Sdk.props has the value baked in at pack time (BakeSdkProps in
+           the nuproj) because it must be known during a consumer's very first
+           restore, before the package's build/ targets are imported.
+       The two out-of-band pins that cannot import MSBuild — the zig setup in
+       apple-sysroot-drift.yml (upstream form) and the prose in
+       .copilot-instructions.md — are checked against this file by the
+       zig-version-sync CI guard (eng/check-zig-version-sync.sh). See
+       docs/zig-version-bump.md.
+
+       This file is packed into build/ so Crosscompile.targets can import it
+       from a restored package as well as from the source tree. -->
+  <PropertyGroup>
+    <ZigVersion Condition="'$(ZigVersion)' == ''">0.16.0.2</ZigVersion>
+  </PropertyGroup>
+
+</Project>

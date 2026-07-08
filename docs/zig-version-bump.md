@@ -1,12 +1,22 @@
 # Bumping ZigVersion
 
 `ZigVersion` (the [Vezel.Zig.Toolsets](https://github.com/vezel-dev/zig-toolsets)
-package version) is pinned in three places that **must stay in sync**:
+package version) has a **single source of truth**: the `<ZigVersion>` default in
+`src/ZigVersion.props`. Everything else derives from it:
 
-- `src/Crosscompile.targets`
-- `src/AotAnywhere.nuproj`
-- `src/Sdk/Sdk.props` (the default must be known during a consumer's very
-  first restore, before the package's build targets are imported)
+- `src/Crosscompile.targets` and `src/AotAnywhere.nuproj` `<Import>` it.
+- `src/Sdk/Sdk.props` has it baked in at pack time (`BakeSdkProps` in the
+  nuproj), because the default must be known during a consumer's very first
+  restore — before the package's build targets are imported.
+
+Two pins live outside MSBuild and cannot import the value, so they are checked
+against `ZigVersion.props` by the `zig-version-sync` CI guard
+(`eng/check-zig-version-sync.sh`) rather than kept in sync by hand:
+
+- `.github/workflows/apple-sysroot-drift.yml` — pins `setup-zig` to the
+  *upstream* form (the package version minus its packaging suffix, e.g.
+  `0.16.0.2` → `0.16.0`).
+- `.copilot-instructions.md` — mentions both forms in prose.
 
 Zig has repeatedly changed behaviour relevant to this package between releases,
 so every bump goes through the checklist below. Most of it is enforced
@@ -14,9 +24,15 @@ automatically — the notes say where.
 
 ## Checklist
 
-- [ ] **All pins updated and in sync.** Update the `<ZigVersion>` default in
-      *all three* files above. Renovate opens the bump PR (see
-      [Automation](#automation)); confirm it touched all of them.
+- [ ] **The single pin is updated.** Change the `<ZigVersion>` default in
+      `src/ZigVersion.props`. Renovate opens the bump PR (see
+      [Automation](#automation)).
+
+- [ ] **The out-of-band pins match.** Update the `setup-zig` version in
+      `apple-sysroot-drift.yml` (upstream form) and the prose in
+      `.copilot-instructions.md`.
+      *Automated:* the `zig-version-sync` job fails the PR if either drifts from
+      `ZigVersion.props`. Run `eng/check-zig-version-sync.sh` locally to check.
 
 - [ ] **`zig test` the shims passes with the new toolchain.** The shim sources
       (`clang_shim.zig`, `objcopy_shim.zig`) must still compile and pass — zig's
@@ -49,9 +65,11 @@ automatically — the notes say where.
 ## Automation
 
 - **Renovate** (`renovate.json`) watches `Vezel.Zig.Toolsets.*` on nuget.org and
-  opens a PR that bumps the `<ZigVersion>` value in all three files. The PR body
-  carries this checklist.
-- The **CI already covers most of the checklist** on any PR (`shim-tests`,
-  `pack`, `build`, `validate`). The manual items are the ones a green run cannot
-  prove: the win-arm64 codegen and `zig objcopy` re-checks, which only matter
-  when deciding whether a bump lets us *remove* a workaround.
+  opens a PR that bumps the `<ZigVersion>` value in `src/ZigVersion.props` (the
+  single pin). The PR body carries this checklist.
+- The **CI already covers most of the checklist** on any PR (`zig-version-sync`,
+  `shim-tests`, `pack`, `build`, `validate`). The `zig-version-sync` guard
+  catches the out-of-band pins Renovate does not touch. The manual items are the
+  ones a green run cannot prove: the win-arm64 codegen and `zig objcopy`
+  re-checks, which only matter when deciding whether a bump lets us *remove* a
+  workaround.
