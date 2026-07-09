@@ -181,10 +181,15 @@
       <TargetTriple Condition="'$(CrossCompileArch)' != '' and $(CrossCompileRid.StartsWith('osx'))">$(CrossCompileArch)-macos</TargetTriple>
       <TargetTriple Condition="'$(CrossCompileArch)' != '' and $(CrossCompileRid.StartsWith('win'))">$(CrossCompileArch)-windows-gnu</TargetTriple>
 
-      <!-- Apple's strip/dsymutil reject zig-linked binaries (and don't exist
-           on Linux/Windows hosts), so default to keeping symbols for macOS
-           targets. An explicit /p:StripSymbols=true still wins. -->
-      <StripSymbols Condition="$(CrossCompileRid.StartsWith('osx'))">false</StripSymbols>
+      <!-- StripSymbols keeps the SDK's Unix default (true) for macOS targets.
+           Apple's strip/dsymutil reject zig-linked binaries (and don't exist
+           on Linux/Windows hosts), but the SDK's dsymutil+strip step lives
+           inside LinkNative, which the DirectLink takeover pre-satisfies;
+           the strip itself happens at link time via ld64's -x in
+           _AotAnywhereComputeMacLinkArgs. The SDK's Apple stripper probes in
+           SetupOSSpecificProps are IgnoreExitCode Execs whose Errors only
+           fire for non-Apple platforms, so StripSymbols=true is safe on
+           mac-less hosts too. -->
     </PropertyGroup>
 
     <Error Condition="'$(_AotAnywhereWindowsCross)' == 'true' and '$(CrossCompileArch)' == ''"

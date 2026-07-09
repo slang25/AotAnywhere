@@ -108,7 +108,6 @@ jobs:
             -r osx-arm64 \
             -c Release \
             -p:TargetFramework=net11.0 \
-            -p:StripSymbols=false \
             -p:InvariantGlobalization=true \
             --output artifacts/osx-arm64
           test -f artifacts/osx-arm64/Hello

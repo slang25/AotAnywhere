@@ -113,11 +113,13 @@ for target in "${TARGET_ARRAY[@]}"; do
         "-p:AotAnywhereSignP12PasswordFile=$pass"
       )
     fi
-    # For macOS targets, use AotAnywhere for cross-compilation
+    # For macOS targets, use AotAnywhere for cross-compilation.
+    # Deliberately no StripSymbols override: it defaults to true and is
+    # honoured at link time via ld64's -x/-S (issue #62); the mac runners
+    # assert the local symbols are actually gone.
     if dotnet publish test/Hello.csproj \
       -r "$target" \
       -c Release \
-      -p:StripSymbols=false \
       -p:InvariantGlobalization=true \
       -p:BaseIntermediateOutputPath="$obj_dir" \
       ${sign_args[@]+"${sign_args[@]}"} \

@@ -10,9 +10,10 @@ namespace AotAnywhere.MSBuild.Tests;
 // -Wl,--gc-sections / --discard-all onto the net8 macho link.
 public class MacLinkArgsTests
 {
-    static string[] Compute(string linkerArgs, string sysroot = "/opt/applesdk")
+    static string[] Compute(string linkerArgs, string sysroot = "/opt/applesdk",
+        string? stripSymbols = null)
     {
-        var result = Harness.Run("_AotAnywhereComputeMacLinkArgs", new Dictionary<string, string>
+        var props = new Dictionary<string, string>
         {
             ["_AotAnywhereMacHostLink"] = "false", // force cross mode - deterministic
             ["_MacSysroot"] = sysroot,
@@ -21,7 +22,10 @@ public class MacLinkArgsTests
             ["ExportsFile"] = "",
             ["OutputType"] = "exe",
             ["TestLinkerArgs"] = linkerArgs,
-        });
+        };
+        if (stripSymbols is not null)
+            props["StripSymbols"] = stripSymbols;
+        var result = Harness.Run("_AotAnywhereComputeMacLinkArgs", props);
         if (!result.Success)
             throw new Exception($"_AotAnywhereComputeMacLinkArgs failed: {result.ErrorText}");
         return result.Items("_MacLinkArg");
@@ -66,6 +70,30 @@ public class MacLinkArgsTests
             .IsFalse();
         await Assert.That(Compute("-lswiftCore;--target=aarch64-macos").Any(a => a == "-lswiftCoreFoundation"))
             .IsTrue();
+    }
+
+    // The strip -x equivalent: StripSymbols=true (the SDK default) folds
+    // ld64's -x (drop local symbols) and -S (drop the stabs debug map) into
+    // the link line; Apple's post-link strip cannot run on zig-linked
+    // binaries, so this is the only strip path (issue #62 - the unstripped
+    // ILC local symbols and stabs tripled the binary size).
+    [Test]
+    public async Task StripSymbolsAddsLocalSymbolStripFlags()
+    {
+        var args = Compute("--target=aarch64-macos", stripSymbols: "true");
+        await Assert.That(args.Any(a => a == "-Wl,-x")).IsTrue();
+        await Assert.That(args.Any(a => a == "-Wl,-S")).IsTrue();
+    }
+
+    [Test]
+    public async Task NoStripFlagsWhenStripSymbolsOff()
+    {
+        foreach (var args in new[] { Compute("--target=aarch64-macos", stripSymbols: "false"),
+                                     Compute("--target=aarch64-macos") })
+        {
+            await Assert.That(args.Any(a => a == "-Wl,-x")).IsFalse();
+            await Assert.That(args.Any(a => a == "-Wl,-S")).IsFalse();
+        }
     }
 
     [Test]

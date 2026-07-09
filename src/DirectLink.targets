@@ -150,11 +150,14 @@
        LinkNative's Inputs/Outputs, so once $(NativeBinary) exists LinkNative's
        incremental check skips itself and the shim's macOS path never runs.
 
+       StripSymbols (default true, as everywhere else) is honoured at link
+       time via ld64's -x - see _AotAnywhereComputeMacLinkArgs; the SDK's
+       post-link dsymutil+strip cannot run (both reject zig-linked binaries),
+       so no dSYM sidecar is produced.
+
        Not yet handled (prototype scope): the no-sysroot degraded cross branch
-       (the bundled sysroot is always present by default) and StripSymbols=true
-       for Apple (defaults false for osx in OverwriteTargetTriple; the SDK's
-       dsymutil+strip reject zig-linked binaries). NativeLib=Static still
-       archives via $(CppLibCreator), untouched. -->
+       (the bundled sysroot is always present by default). NativeLib=Static
+       still archives via $(CppLibCreator), untouched. -->
 
   <PropertyGroup>
     <_AotAnywhereMacDirectLinkActive>false</_AotAnywhereMacDirectLinkActive>
@@ -260,12 +263,34 @@
       <_MacSwiftOverlay Include="-Wl,-dead_strip_dylibs;-lswiftCoreFoundation;-lswiftDarwin;-lswiftDispatch;-lswiftIOKit;-lswiftObjectiveC;-lswiftXPC;-lswift_Builtin_float;-lswift_errno;-lswift_math;-lswift_signal;-lswift_stdio;-lswift_time;-lswiftsys_time;-lswiftunistd" />
     </ItemGroup>
 
+    <!-- The SDK's Apple strip is a post-link `dsymutil && strip -x` inside
+         LinkNative, which this takeover skips - and Apple's strip rejects
+         zig-linked binaries anyway ("bad n_sect"). ld64's -x (omit local
+         symbols from the symbol table) plus -S (omit the stabs debug map)
+         at link time together match what `strip -x` removes; zig's macho
+         linker honours both, and its ad-hoc code signature is computed
+         after they apply. Without them, ILC's local method symbols and
+         their stabs stay in __LINKEDIT and the binary is ~2-3x larger than
+         the standard pipeline's (issue #62). Symbols ILC emits as true
+         externals survive - zig ignores the -exported_symbols_list that
+         would demote them. Newer ILCs mark ever more of them hidden (which
+         -x then drops): for the Hello test app net8 keeps ~14k externals,
+         net9 ~5.7k, net10 ~600, at which point the output is within ~15%
+         of the standard pipeline's. No dSYM sidecar is possible (dsymutil
+         also rejects zig output); StripSymbols=false keeps the symbols in
+         the binary instead. -->
+    <ItemGroup Condition="'$(StripSymbols)' == 'true'">
+      <_MacStrip Include="-Wl,-x" />
+      <_MacStrip Include="-Wl,-S" />
+    </ItemGroup>
+
     <!-- Final line: sysroot prefix, then the SDK's args (minus the drops),
          then the Swift overlays, then the GS-cookie pad source. -->
     <ItemGroup>
       <_MacLinkArg Include="@(_MacPrefix)" />
       <_MacLinkArg Include="@(_MacCore)" Exclude="@(_MacDrop)" />
       <_MacLinkArg Include="@(_MacSwiftOverlay)" />
+      <_MacLinkArg Include="@(_MacStrip)" />
       <_MacLinkArg Include="&quot;$(_MacPadFile)&quot;" />
     </ItemGroup>
 

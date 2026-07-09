@@ -21,9 +21,16 @@ Things to know:
   runtime packs (`eng/generate-apple-sysroot.cs`). If a future .NET version
   references new Apple symbols, the link fails with an unresolved symbol until
   the stubs are regenerated.
-- Symbols are not stripped for macOS targets (`StripSymbols` defaults to
-  `false` there): Apple's `strip`/`dsymutil` are unavailable on other hosts and
-  reject zig-linked binaries anyway.
+- Symbols are stripped by default (`StripSymbols` defaults to `true`, as on
+  every Unix target), but at link time via ld64's `-x`/`-S` rather than Apple's
+  post-link `strip` — Apple's `strip`/`dsymutil` are unavailable on other hosts
+  and reject zig-linked binaries anyway. That also means no `.dSYM` sidecar is
+  produced; publish with `/p:StripSymbols=false` to keep the symbols in the
+  binary instead. (Native AOT stack traces don't need either — they come from
+  ILC's own metadata.) Older ILCs emit many method symbols as externals, which
+  link-time stripping cannot remove, so binaries get closer to the standard
+  pipeline's size the newer the target framework: on .NET 10 they are within a
+  few percent, on .NET 8 noticeably larger.
 - zig gives osx-arm64 binaries an ad-hoc code signature (Apple Silicon refuses
   to run entirely unsigned code); osx-x64 binaries are left unsigned. Either way
   that only covers running locally — for distribution you should sign (and if
