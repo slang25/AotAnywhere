@@ -248,7 +248,9 @@ public static class ElfStripper
         }
 
         var outBuf = new List<byte>((int)dataEnd + 4096);
-        for (var i = 0; i < (int)dataEnd; i++) outBuf.Add(data[i]);
+        // Bulk-copy the preserved prefix; AddRange takes the ICollection fast
+        // path (a single Array.Copy) rather than a per-byte Add loop.
+        outBuf.AddRange(new ArraySegment<byte>(data, 0, (int)dataEnd));
 
         // .gnu_debuglink payload: NUL-terminated basename padded to 4, then the
         // little-endian CRC32.
