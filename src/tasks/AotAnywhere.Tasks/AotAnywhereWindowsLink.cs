@@ -42,8 +42,8 @@ public sealed class AotAnywhereWindowsLink : MSBuildTask
     const string StubDirName = "aotanywhere-msvc-stub-libs";
     const string OptOutHint = "Set AotAnywhereWindowsLinkOptimize=false to link without /OPT:REF,/OPT:ICF (larger binary).";
 
-    /// Environment overrides for the zig processes (the cache redirects
-    /// AliasSpacedPaths sets up).
+    /// Environment overrides for the zig processes (the cache pins and
+    /// redirects AliasSpacedPaths sets up).
     readonly Dictionary<string, string> _zigEnv = new();
 
     public override bool Execute()
@@ -96,8 +96,17 @@ public sealed class AotAnywhereWindowsLink : MSBuildTask
     /// through space-free symlink aliases keeps the line reconstructible.
     bool AliasSpacedPaths(List<string> argv, MsvcTranslation t, ref string? scratchDir)
     {
-        var cacheDirs = ZigCacheDirsNeedingAlias();
-        if (cacheDirs.Count == 0 && !argv.Any(LinkPathAliaser.HasSpace)) return true;
+        // Pin both cache env vars rather than predict zig's own resolution:
+        // with no override, zig cc roots its local cache at `.zig-cache` under
+        // the nearest ancestor directory holding a build.zig (else the global
+        // dir), and that discovery cannot be reproduced here. Unpinned, a
+        // build.zig ancestor under a spaced path would put the glue object at
+        // a spaced local-cache path this method never saw (issue #67).
+        var cacheDirs = ResolveZigCacheDirs(Environment.GetEnvironmentVariable);
+        foreach (var (variable, dir) in cacheDirs) _zigEnv[variable] = dir;
+
+        var spacedCacheDirs = cacheDirs.Where(c => LinkPathAliaser.HasSpace(c.Dir)).ToList();
+        if (spacedCacheDirs.Count == 0 && !argv.Any(LinkPathAliaser.HasSpace)) return true;
 
         // Hosts are non-Windows only; /tmp is the space-free fallback when the
         // temp dir itself is spaced (TMPDIR override).
@@ -117,7 +126,7 @@ public sealed class AotAnywhereWindowsLink : MSBuildTask
             }
             if (aliasedOut != null) t.OutPath = aliasedOut; // what -OUT: will now say
 
-            foreach (var (variable, dir) in cacheDirs)
+            foreach (var (variable, dir) in spacedCacheDirs)
             {
                 Directory.CreateDirectory(dir); // symlink to a real dir, not a dangling one
                 _zigEnv[variable] = aliaser.DirAlias(dir);
@@ -134,26 +143,33 @@ public sealed class AotAnywhereWindowsLink : MSBuildTask
         return true;
     }
 
-    /// zig's cache directories surface in the printed line too (crt2.obj, the
-    /// MinGW import libraries live there). Mirrors zig's own resolution:
-    /// explicit env var, else XDG_CACHE_HOME/zig, else HOME/.cache/zig.
-    static List<(string Variable, string Dir)> ZigCacheDirsNeedingAlias()
+    /// zig's cache directories surface in the printed line too: the compiled
+    /// glue object lands in the local cache, crt2.obj and the MinGW import
+    /// libraries in the global one. Resolves both to what the caller then
+    /// pins via the env vars. Global: the explicit env var, else
+    /// XDG_CACHE_HOME/zig, else HOME/.cache/zig. Local: the explicit env
+    /// var, else the resolved global dir - which is what zig cc itself does
+    /// outside a build.zig tree (its ancestor build.zig discovery is
+    /// deliberately overridden - see AliasSpacedPaths).
+    public static List<(string Variable, string Dir)> ResolveZigCacheDirs(Func<string, string?> getEnv)
     {
-        var xdg = Environment.GetEnvironmentVariable("XDG_CACHE_HOME");
+        var xdg = getEnv("XDG_CACHE_HOME");
         var defaultDir = Path.Combine(
             string.IsNullOrEmpty(xdg)
-                ? Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? ".", ".cache")
+                ? Path.Combine(getEnv("HOME") ?? ".", ".cache")
                 : xdg,
             "zig");
 
-        var dirs = new List<(string, string)>();
-        foreach (var variable in new[] { "ZIG_GLOBAL_CACHE_DIR", "ZIG_LOCAL_CACHE_DIR" })
+        // netstandard2.0's IsNullOrEmpty has no nullability annotation; the
+        // patterns keep the flow analysis (and so the build) warning-free.
+        var globalDir = getEnv("ZIG_GLOBAL_CACHE_DIR") is { Length: > 0 } g ? g : defaultDir;
+        var localDir = getEnv("ZIG_LOCAL_CACHE_DIR") is { Length: > 0 } l ? l : globalDir;
+
+        return new List<(string Variable, string Dir)>
         {
-            var dir = Environment.GetEnvironmentVariable(variable);
-            if (string.IsNullOrEmpty(dir)) dir = defaultDir;
-            if (LinkPathAliaser.HasSpace(dir)) dirs.Add((variable, dir));
-        }
-        return dirs;
+            ("ZIG_GLOBAL_CACHE_DIR", globalDir),
+            ("ZIG_LOCAL_CACHE_DIR", localDir),
+        };
     }
 
     static void CreateSymlink(string target, string linkPath)
