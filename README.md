@@ -25,7 +25,7 @@ SDKs, cross toolchains or system packages to install on the build machine.
    ```xml
    <Project Sdk="Microsoft.NET.Sdk">
 
-     <Sdk Name="StuDev.AotAnywhere" Version="1.0.1" />
+     <Sdk Name="StuDev.AotAnywhere" Version="1.0.2" />
    ```
 
    (Or omit the `Version` and pin it once in `global.json` under
