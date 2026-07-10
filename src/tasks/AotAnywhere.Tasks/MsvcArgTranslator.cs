@@ -15,6 +15,12 @@ public sealed class MsvcTranslation
     public List<string> ObjectInputs { get; } = new();
     public bool SawTarget { get; set; }
     public string? OutPath { get; set; }
+    /// /OPT:REF and /OPT:ICF. zig cc cannot express them (its -Wl parser has
+    /// no COFF /OPT mapping and it always hands lld-link -DEBUG, whose default
+    /// is OPT:NOREF,NOICF), so the task honors them with a second lld-link
+    /// pass instead of via Args.
+    public bool OptRef { get; set; }
+    public bool OptIcf { get; set; }
 }
 
 /// Translates MSVC link.exe arguments to `zig cc` arguments. Pure rewriting;
@@ -123,8 +129,17 @@ public static class MsvcArgTranslator
                 }
                 if ((p = OptPayload(opt, "OPT")) != null)
                 {
-                    if (EqI(p, "REF")) t.Args.Add("-Wl,--gc-sections");
-                    continue; // ICF and friends: lld's defaults apply
+                    // /OPT:REF,ICF=2,... - a comma list; last mention wins,
+                    // as with link.exe. LBR/NOLBR (arm thunk sorting) has no
+                    // lld-link equivalent and is dropped.
+                    foreach (var item in p.Split(','))
+                    {
+                        if (EqI(item, "REF")) t.OptRef = true;
+                        else if (EqI(item, "NOREF")) t.OptRef = false;
+                        else if (EqI(item, "ICF") || item.StartsWith("ICF=", StringComparison.OrdinalIgnoreCase)) t.OptIcf = true;
+                        else if (EqI(item, "NOICF")) t.OptIcf = false;
+                    }
+                    continue;
                 }
                 if ((p = OptPayload(opt, "MERGE")) != null)
                 {

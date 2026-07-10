@@ -24,11 +24,19 @@ Things to know:
   input objects, which makes lld produce the same merged section layout as
   link.exe — and the `/GS` stack cookie is randomized at startup, mirroring
   MSVC's `__security_init_cookie`.
+- `/OPT:REF` and `/OPT:ICF` (dead-code stripping and identical-code folding)
+  are honored with a second link pass — zig cc cannot pass COFF `/OPT` flags
+  through, so the task replays the underlying lld-link invocation with the
+  flags appended, bringing the size in line with an MSVC link. Paths containing
+  spaces are routed through temporary symlink aliases for the pass; the one
+  shape that cannot be fixed up is a space in the output *file name* itself
+  (renaming after the link would desync the PDB reference embedded in the
+  image), which fails the link with a clear error. Set
+  `AotAnywhereWindowsLinkOptimize=false` to skip the pass and link without
+  `/OPT` (roughly 15% larger output).
 - Some MSVC hardening/link features are still not carried over: Control Flow
-  Guard and CET shadow-stack markers (`/CETCOMPAT`) are not emitted, and
-  identical-code folding (`/OPT:ICF`) is not performed, leaving the output
-  somewhat larger than an MSVC link. For maximum-hardening release builds, link
-  on Windows with MSVC.
+  Guard and CET shadow-stack markers (`/CETCOMPAT`) are not emitted. For
+  maximum-hardening release builds, link on Windows with MSVC.
 - On a Windows host the package does nothing for `win-*` RIDs; the SDK's native
   MSVC link (including cross-arch win-x64 ↔ win-arm64 with the right VS
   components) applies.

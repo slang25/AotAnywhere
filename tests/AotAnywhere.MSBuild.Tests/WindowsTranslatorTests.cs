@@ -79,13 +79,17 @@ public class WindowsTranslatorTests
             "-Wl,--subsystem,console",
             "-municode",
             "-Wl,--stack,1572864",
-            "-Wl,--gc-sections",
             "--target=x86_64-windows-gnu",
         }));
 
         await Assert.That(t.SawTarget).IsTrue();
         await Assert.That(t.OutPath).IsEqualTo("bin/native/Hello.exe");
         await Assert.That(t.Warnings.Count).IsEqualTo(0);
+
+        // /OPT never reaches the zig cc args - it is honored by the second
+        // lld-link pass the task runs.
+        await Assert.That(t.OptRef).IsTrue();
+        await Assert.That(t.OptIcf).IsTrue();
 
         await Assert.That(Lines(t.Merges.Select(m => $"{m.From}={m.To}")))
             .IsEqualTo(".managedcode=.text\nhydrated=.bss");
@@ -115,6 +119,22 @@ public class WindowsTranslatorTests
     {
         var t = MsvcArgTranslator.Translate(new[] { "/ENTRY:mainCRTStartup", "/DEBUG:FULL", "/DEBUG" });
         await Assert.That(Lines(t.Args)).IsEqualTo("-g");
+    }
+
+    [Test]
+    public async Task OptParsesCommaListsLastMentionWinsAndEmitsNoArgs()
+    {
+        // /OPT:REF,ICF=2 - comma list, ICF iteration count; LBR is dropped.
+        var t = MsvcArgTranslator.Translate(new[] { "/OPT:REF,ICF=2,LBR" });
+        await Assert.That(t.OptRef).IsTrue();
+        await Assert.That(t.OptIcf).IsTrue();
+        await Assert.That(t.Args.Count).IsEqualTo(0);
+        await Assert.That(t.Warnings.Count).IsEqualTo(0);
+
+        // Last mention wins, as with link.exe.
+        t = MsvcArgTranslator.Translate(new[] { "/OPT:REF", "/OPT:ICF", "/OPT:NOICF,NOREF" });
+        await Assert.That(t.OptRef).IsFalse();
+        await Assert.That(t.OptIcf).IsFalse();
     }
 
     [Test]

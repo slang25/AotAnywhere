@@ -324,9 +324,12 @@
   <!-- The Windows link takeover: hand the MSVC-style link tokens to the managed
        AotAnywhereWindowsLink task, which translates them to a `zig cc` MinGW
        cross-link, applies /MERGE via COFF section renames, writes the stub
-       archives + glue, and runs zig. Replaces link_shim.zig's link.exe
-       personality (reached today by pointing $(CppLinker) at the shim). Same
-       BeforeTargets="LinkNative" seam as the Linux/macOS takeovers.
+       archives + glue, and runs zig - then re-runs the lld-link invocation zig
+       printed with /OPT:REF,/OPT:ICF appended, since zig cc cannot pass COFF
+       /OPT flags through (without them the binary is ~15% larger; issue #65).
+       Replaces link_shim.zig's link.exe personality (reached today by pointing
+       $(CppLinker) at the shim). Same BeforeTargets="LinkNative" seam as the
+       Linux/macOS takeovers.
 
        The MSVC framing the SDK's LinkNative writes into link.rsp for a Windows
        target is reconstructed here as items (unquoted - these are MSBuild item
@@ -336,6 +339,14 @@
   <PropertyGroup>
     <_AotAnywhereWinDirectLinkActive>false</_AotAnywhereWinDirectLinkActive>
     <_AotAnywhereWinDirectLinkActive Condition="'$(_AotAnywhereWindowsCross)' == 'true' and '$(NativeLib)' != 'Static'">true</_AotAnywhereWinDirectLinkActive>
+    <!-- /OPT:REF,/OPT:ICF need a second lld-link pass replaying zig's verbose
+         link line (see LldLinkReplay in the task assembly). Paths with spaces
+         are symlink-aliased for the pass (LinkPathAliaser); if the replay
+         still cannot be trusted, the task fails the link rather than silently
+         keep the ~15% larger unoptimized binary. This is the escape hatch:
+         false drops /OPT and links in one pass. -->
+    <_AotAnywhereWinLinkOptimize>true</_AotAnywhereWinLinkOptimize>
+    <_AotAnywhereWinLinkOptimize Condition="'$(AotAnywhereWindowsLinkOptimize)' == 'false'">false</_AotAnywhereWinLinkOptimize>
   </PropertyGroup>
 
   <Target Name="AotAnywhereDirectLinkWindows"
@@ -364,7 +375,8 @@
         MsvcArgs="@(_WinMsvcArg)"
         ZigExe="$(_AotAnywhereZigExe)"
         SupportDir="$(NativeIntermediateOutputPath)"
-        GlueSource="$(AotAnywhereMsvcGlueSource)" />
+        GlueSource="$(AotAnywhereMsvcGlueSource)"
+        Optimize="$(_AotAnywhereWinLinkOptimize)" />
 
   </Target>
 

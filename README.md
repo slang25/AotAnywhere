@@ -79,9 +79,8 @@ handles that itself, no LLVM install needed).
   certificate and notarize it — both doable from any host, no Mac required. See
   [Signing and notarizing](docs/macos-targets.md#signing-and-notarizing).
 
-- **Windows output skips some MSVC hardening.** Control Flow Guard, CET markers
-  (`/CETCOMPAT`) and identical-code folding (`/OPT:ICF`) are not carried over, so
-  the binary is somewhat larger than an MSVC link. For maximum-hardening release
+- **Windows output skips some MSVC hardening.** Control Flow Guard and CET
+  markers (`/CETCOMPAT`) are not carried over. For maximum-hardening release
   builds, link on Windows with MSVC. Details in [Windows targets](docs/windows-targets.md).
 
 - **Windows on ARM64 is not supported as a host.** zig 0.16's aarch64-windows

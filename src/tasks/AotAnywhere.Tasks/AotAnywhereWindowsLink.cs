@@ -31,8 +31,20 @@ public sealed class AotAnywhereWindowsLink : MSBuildTask
     /// Path to the shipped MSVC glue source, compiled into the link.
     [Required] public string GlueSource { get; set; } = "";
 
+    /// Whether to honor /OPT:REF and /OPT:ICF with the second lld-link pass.
+    /// $(AotAnywhereWindowsLinkOptimize) != 'false'; with it off, /OPT is
+    /// dropped and the binary is ~15% larger (matching lld's OPT:NOREF,NOICF
+    /// defaults). The opt-out is an escape hatch for the guards around
+    /// replaying zig's verbose link line (see RelinkWithOptFlags).
+    public bool Optimize { get; set; } = true;
+
     static readonly string[] StubLibNames = { "libLIBCMT.a", "libOLDNAMES.a", "liblibcpmt.a", "libuuid.a" };
     const string StubDirName = "aotanywhere-msvc-stub-libs";
+    const string OptOutHint = "Set AotAnywhereWindowsLinkOptimize=false to link without /OPT:REF,/OPT:ICF (larger binary).";
+
+    /// Environment overrides for the zig processes (the cache redirects
+    /// AliasSpacedPaths sets up).
+    readonly Dictionary<string, string> _zigEnv = new();
 
     public override bool Execute()
     {
@@ -55,7 +67,138 @@ public sealed class AotAnywhereWindowsLink : MSBuildTask
         argv.Add(GlueSource);
         argv.Add("-L" + stubDir);
 
-        return RunZig(argv) && !Log.HasLoggedErrors;
+        // /OPT:REF and /OPT:ICF need a second lld-link pass (see LldLinkReplay);
+        // -v makes zig print the lld-link argv the pass replays.
+        var wantOpt = Optimize && (translation.OptRef || translation.OptIcf);
+        if (wantOpt) argv.Add("-v");
+
+        string? scratchDir = null;
+        try
+        {
+            if (wantOpt && !AliasSpacedPaths(argv, translation, ref scratchDir)) return false;
+
+            var stderrLines = wantOpt ? new List<string>() : null;
+            if (!RunZig(argv, stderrLines)) return false;
+            if (wantOpt && !RelinkWithOptFlags(translation, stderrLines!)) return false;
+            return !Log.HasLoggedErrors;
+        }
+        finally
+        {
+            if (scratchDir != null)
+                try { Directory.Delete(scratchDir, recursive: true); } catch { /* scratch litter only */ }
+        }
+    }
+
+    /// The verbose line the /OPT re-link replays is space-joined with no
+    /// quoting, so paths containing spaces must not reach zig as-is. zig
+    /// echoes the paths it was given verbatim, so routing every spaced path
+    /// (arguments, and zig's cache directories via its cache env vars)
+    /// through space-free symlink aliases keeps the line reconstructible.
+    bool AliasSpacedPaths(List<string> argv, MsvcTranslation t, ref string? scratchDir)
+    {
+        var cacheDirs = ZigCacheDirsNeedingAlias();
+        if (cacheDirs.Count == 0 && !argv.Any(LinkPathAliaser.HasSpace)) return true;
+
+        // Hosts are non-Windows only; /tmp is the space-free fallback when the
+        // temp dir itself is spaced (TMPDIR override).
+        var tempRoot = Path.GetTempPath();
+        if (LinkPathAliaser.HasSpace(tempRoot)) tempRoot = "/tmp";
+        scratchDir = Path.Combine(tempRoot, "aotanywhere-link-" + Guid.NewGuid().ToString("N").Substring(0, 12));
+
+        try
+        {
+            Directory.CreateDirectory(scratchDir);
+            var aliaser = new LinkPathAliaser(scratchDir, CreateSymlink);
+
+            if (!aliaser.TryRewriteArgv(argv, out var aliasedOut, out var error))
+            {
+                Log.LogError($"AotAnywhere: cannot alias the link paths for the /OPT re-link: {error}. {OptOutHint}");
+                return false;
+            }
+            if (aliasedOut != null) t.OutPath = aliasedOut; // what -OUT: will now say
+
+            foreach (var (variable, dir) in cacheDirs)
+            {
+                Directory.CreateDirectory(dir); // symlink to a real dir, not a dangling one
+                _zigEnv[variable] = aliaser.DirAlias(dir);
+            }
+        }
+        catch (Exception e)
+        {
+            Log.LogError($"AotAnywhere: cannot alias the link paths for the /OPT re-link: {e.Message}. {OptOutHint}");
+            return false;
+        }
+
+        Log.LogMessage(MessageImportance.Normal,
+            $"AotAnywhere: paths with spaces aliased under '{scratchDir}' so the /OPT re-link can replay zig's link line.");
+        return true;
+    }
+
+    /// zig's cache directories surface in the printed line too (crt2.obj, the
+    /// MinGW import libraries live there). Mirrors zig's own resolution:
+    /// explicit env var, else XDG_CACHE_HOME/zig, else HOME/.cache/zig.
+    static List<(string Variable, string Dir)> ZigCacheDirsNeedingAlias()
+    {
+        var xdg = Environment.GetEnvironmentVariable("XDG_CACHE_HOME");
+        var defaultDir = Path.Combine(
+            string.IsNullOrEmpty(xdg)
+                ? Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? ".", ".cache")
+                : xdg,
+            "zig");
+
+        var dirs = new List<(string, string)>();
+        foreach (var variable in new[] { "ZIG_GLOBAL_CACHE_DIR", "ZIG_LOCAL_CACHE_DIR" })
+        {
+            var dir = Environment.GetEnvironmentVariable(variable);
+            if (string.IsNullOrEmpty(dir)) dir = defaultDir;
+            if (LinkPathAliaser.HasSpace(dir)) dirs.Add((variable, dir));
+        }
+        return dirs;
+    }
+
+    static void CreateSymlink(string target, string linkPath)
+    {
+        if (symlink(target, linkPath) != 0)
+            throw new IOException($"symlink('{target}', '{linkPath}') failed (errno {System.Runtime.InteropServices.Marshal.GetLastWin32Error()})");
+    }
+
+    // This task only runs on non-Windows hosts (on Windows the SDK's MSVC link
+    // applies), so libc is always there.
+    [System.Runtime.InteropServices.DllImport("libc", SetLastError = true)]
+    static extern int symlink(string target, string linkPath);
+
+    /// The zig cc link above produced a correct but unoptimized binary (zig
+    /// always hands lld-link -DEBUG, so lld defaults to OPT:NOREF,NOICF and
+    /// there is no zig flag to override it). Re-run the exact lld-link
+    /// invocation zig printed - via zig's lld-link subcommand, so it is the
+    /// same linker - with the /OPT flags appended, overwriting the binary and
+    /// PDB in place. No fallback: if the replay cannot be trusted, fail the
+    /// link rather than silently ship the ~15% larger binary.
+    bool RelinkWithOptFlags(MsvcTranslation t, List<string> stderrLines)
+    {
+        var flags = (t.OptRef ? " /OPT:REF" : "") + (t.OptIcf ? " /OPT:ICF" : "");
+
+        var line = LldLinkReplay.FindLldLinkLine(stderrLines);
+        if (line == null)
+        {
+            Log.LogError($"AotAnywhere: zig cc -v did not print an lld-link invocation, so{flags} cannot be applied (zig verbose-output change?). {OptOutHint}");
+            return false;
+        }
+
+        var lldArgv = LldLinkReplay.ParseArgv(line, t.OutPath ?? "", File.Exists, Path.GetFullPath, out var error);
+        if (lldArgv == null)
+        {
+            Log.LogError($"AotAnywhere: cannot replay the lld-link invocation to apply{flags}: {error}. {OptOutHint}");
+            return false;
+        }
+
+        var argv = new List<string> { "lld-link" };
+        argv.AddRange(lldArgv);
+        if (t.OptRef) argv.Add("-OPT:REF");
+        if (t.OptIcf) argv.Add("-OPT:ICF");
+
+        Log.LogMessage(MessageImportance.Normal, $"AotAnywhere: re-linking with{flags} (zig cc cannot pass COFF /OPT flags through).");
+        return RunZig(argv, null);
     }
 
     /// Honors /MERGE by renaming COFF sections in the input objects. Inputs are
@@ -122,7 +265,10 @@ public sealed class AotAnywhereWindowsLink : MSBuildTask
         return stubDir;
     }
 
-    bool RunZig(List<string> argv)
+    /// stderrCapture also collects stderr for the caller (the -v verbose argv
+    /// lines); the huge cc1/lld-link argv lines it exists to catch are logged
+    /// Low so real diagnostics keep standing out.
+    bool RunZig(List<string> argv, List<string>? stderrCapture)
     {
         var sb = new StringBuilder();
         foreach (var arg in argv) AppendArgument(sb, arg);
@@ -138,12 +284,20 @@ public sealed class AotAnywhereWindowsLink : MSBuildTask
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
+        foreach (var pair in _zigEnv) psi.Environment[pair.Key] = pair.Value;
 
         try
         {
             using var p = new Process { StartInfo = psi };
             p.OutputDataReceived += (_, e) => { if (e.Data != null) Log.LogMessage(MessageImportance.Normal, e.Data); };
-            p.ErrorDataReceived += (_, e) => { if (e.Data != null) Log.LogMessage(MessageImportance.High, e.Data); };
+            p.ErrorDataReceived += (_, e) =>
+            {
+                if (e.Data == null) return;
+                stderrCapture?.Add(e.Data);
+                var verboseArgv = stderrCapture != null &&
+                    (e.Data.StartsWith("lld-link ", StringComparison.Ordinal) || e.Data.Contains(" -cc1 "));
+                Log.LogMessage(verboseArgv ? MessageImportance.Low : MessageImportance.High, e.Data);
+            };
             p.Start();
             p.BeginOutputReadLine();
             p.BeginErrorReadLine();

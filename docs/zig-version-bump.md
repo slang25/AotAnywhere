@@ -47,6 +47,18 @@ automatically — the notes say where.
       target combination and run the resulting binaries.
       *Automated:* runs on every PR.
 
+- [ ] **The Windows /OPT re-link still works.** The Windows link's second pass
+      (`AotAnywhereWindowsLink.RelinkWithOptFlags`) leans on three undocumented
+      zig behaviours: `zig cc -v` printing the `lld-link ...` argv line, the
+      `zig lld-link` subcommand re-execing the bundled LLD COFF driver, and zig
+      echoing the paths it was given verbatim (the spaced-path symlink aliasing
+      in `LinkPathAliaser` depends on zig not realpath-ing them). If a bump
+      changes any of these, the task fails the link with an "AotAnywhere:
+      cannot replay the lld-link invocation" error - there is deliberately no
+      fallback.
+      *Automated:* any Windows-target job in the validation matrix goes red on
+      that error.
+
 ## Automation
 
 - **Renovate** (`renovate.json`) watches `Vezel.Zig.Toolsets.*` on nuget.org and
