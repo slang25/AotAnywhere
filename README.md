@@ -140,3 +140,18 @@ and other globalization features.
   (MSBuild takeovers + managed tasks), and using your own Zig
 - [Cross-platform validation](docs/cross-platform-validation.md) — the CI matrix
   that tests every host → target combination
+
+## Credits
+
+AotAnywhere began as a fork of Michal Strehovsky's
+[PublishAotCross](https://github.com/MichalStrehovsky/PublishAotCross), which
+first demonstrated that Zig could stand in as the linker and sysroot to make
+Native AOT cross-compilation work. It has since been substantially rewritten —
+the native shim is gone, links run directly through `zig cc` and managed MSBuild
+tasks, and it ships bundled Apple sysroot stubs, symbol stripping, and a full
+host × target CI matrix — but the original insight and inspiration are Michal's.
+Thank you.
+
+## License
+
+MIT — see [LICENSE.TXT](LICENSE.TXT).
