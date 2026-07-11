@@ -3,11 +3,26 @@ name: Cross-Platform Validation
 on:
   pull_request:
     branches: [ master ]
+    # Docs/site-only changes can't affect the cross-OS matrix, so skip the
+    # (expensive) validation for them. Keep in sync with main.yml.
+    paths-ignore:
+      - 'site/**'
+      - 'docs/**'
+      - '**/*.md'
+      - 'LICENSE.TXT'
+      - '.github/workflows/deploy-site.yml'
   push:
     branches: [ master ]
+    paths-ignore:
+      - 'site/**'
+      - 'docs/**'
+      - '**/*.md'
+      - 'LICENSE.TXT'
+      - '.github/workflows/deploy-site.yml'
   workflow_dispatch:
-  # Lets the release workflow (publish.yml) require the full matrix green on the
-  # tagged commit before publishing.
+  # Available for on-demand full-matrix runs (e.g. a manual pre-release check).
+  # The release workflow (publish.yml) no longer calls this: the tagged commit
+  # has already been validated on its PR and again on the push to master.
   workflow_call:
 
 # A new push to the same PR supersedes the running validation; cancel it so

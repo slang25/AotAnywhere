@@ -1,8 +1,12 @@
 name: Publish to NuGet
 
-# One-button release: dispatch this workflow with a version -> it validates the
-# full matrix, packs, publishes StuDev.AotAnywhere to nuget.org, then creates the
-# v<version> tag and GitHub release. Dispatched (not tag-triggered) so no PAT is
+# One-button release: dispatch this workflow with a version -> it packs,
+# publishes StuDev.AotAnywhere to nuget.org, then creates the v<version> tag and
+# GitHub release. It does NOT re-run the cross-platform matrix: the commit being
+# released has already been validated on its PR and again on the push to master,
+# so a third full run at release time is wasted CI. (Run
+# cross-platform-validation.yml manually if you ever want an extra pre-release
+# check.) Dispatched (not tag-triggered) so no PAT is
 # needed: GITHUB_TOKEN can trigger workflow_dispatch (unlike a tag push, which it
 # is blocked from triggering), and the tag is created here after publish so it
 # never needs to trigger anything. A manual `git push` of a v* tag still works as
@@ -18,13 +22,7 @@ on:
       - 'v*'
 
 jobs:
-  # Require the full cross-platform matrix green on the tagged commit before we
-  # publish anything. Reusable via workflow_call (see cross-platform-validation.yml).
-  validate:
-    uses: ./.github/workflows/cross-platform-validation.yml
-
   publish:
-    needs: validate
     # The package is host-independent now (one portable netstandard2.0 task DLL,
     # no per-host prebuilt binaries), so any runner can pack it; windows-latest
     # is retained only for continuity.

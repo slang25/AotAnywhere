@@ -3,6 +3,14 @@ name: CI
 on:
   pull_request:
     branches: [ master ]
+    # Docs/site-only PRs don't affect the build, so skip this CI for them.
+    # Keep in sync with the paths-ignore in cross-platform-validation.yml.
+    paths-ignore:
+      - 'site/**'
+      - 'docs/**'
+      - '**/*.md'
+      - 'LICENSE.TXT'
+      - '.github/workflows/deploy-site.yml'
 
 # Releases are driven by publish.yml (dispatch it with a version); this is PR CI
 # only. A new push to the same PR supersedes the running build.
