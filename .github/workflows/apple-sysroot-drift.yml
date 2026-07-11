@@ -85,12 +85,18 @@ jobs:
             `PackVersions` (`eng/generate-apple-sysroot.cs`) to match, so a plain
             `dotnet run eng/generate-apple-sysroot.cs` reproduces this output.
 
-  # Canary: publish the sample app for osx-arm64 against the newest preview SDK.
-  # A missing Apple symbol surfaces here as a link failure even if the generator
-  # above did not flag it. Targets the newest preview TFM so the newest preview
-  # ILCompiler pack is exercised; bump both when a new preview major ships.
+  # Canary: cross-compile the sample app for osx-arm64 against the newest preview
+  # SDK. A missing Apple symbol surfaces here as a link failure even if the
+  # generator above did not flag it. Targets the newest preview TFM so the newest
+  # preview ILCompiler pack is exercised; bump both when a new preview major ships.
+  #
+  # Runs on Linux, NOT macOS, on purpose: a macOS host links against the real
+  # Apple SDK (-isysroot) and would satisfy a missing symbol from there, hiding
+  # the very gap this job exists to catch. A Linux host is a genuine cross-compile
+  # that links against the bundled src/apple-sysroot stubs - the real user
+  # scenario, and the only configuration where a stub gap turns the run red.
   canary:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     name: Canary publish (osx-arm64, newest preview SDK)
     steps:
       - name: Checkout repo
@@ -103,10 +109,19 @@ jobs:
           dotnet-quality: preview
 
       - name: Publish Hello for osx-arm64
+        # Restore explicitly before publishing: publish's implicit restore
+        # ignores the -p:TargetFramework override and restores the csproj's
+        # default TFM (net8.0), so the net11.0 build then fails NETSDK1005
+        # ("assets file doesn't have a target for net11.0"). An explicit restore
+        # honours the override; --no-restore keeps publish from redoing it.
         run: |
+          dotnet restore test/Hello.csproj \
+            -r osx-arm64 \
+            -p:TargetFramework=net11.0
           dotnet publish test/Hello.csproj \
             -r osx-arm64 \
             -c Release \
+            --no-restore \
             -p:TargetFramework=net11.0 \
             -p:InvariantGlobalization=true \
             --output artifacts/osx-arm64
