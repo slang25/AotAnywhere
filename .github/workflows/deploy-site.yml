@@ -30,7 +30,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v7
       - name: Build with Astro
-        uses: withastro/action@v3
+        uses: withastro/action@v6
         with:
           path: site
           # Astro 7 requires Node >=22.12.0; the action defaults to Node 20.
