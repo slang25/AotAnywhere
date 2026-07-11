@@ -108,6 +108,19 @@ jobs:
           dotnet-version: '11.0.x'
           dotnet-quality: preview
 
+      # test/Hello.csproj imports src/*.targets directly instead of consuming
+      # the packed SDK, so NuGet cannot restore the host Zig toolset
+      # (Vezel.Zig.Toolsets.<host>) on a cold cache - the very gap the package's
+      # error message documents. Provide zig on PATH and set UseExternalZig=true
+      # (below) so the canary links host-side with it; the macOS target still
+      # links against the bundled src/apple-sysroot stubs, which is the point.
+      # Pinned to the same upstream release the package ships (guarded by
+      # eng/check-zig-version-sync.sh against src/ZigVersion.props).
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
       - name: Publish Hello for osx-arm64
         # Restore explicitly before publishing: publish's implicit restore
         # ignores the -p:TargetFramework override and restores the csproj's
@@ -117,12 +130,14 @@ jobs:
         run: |
           dotnet restore test/Hello.csproj \
             -r osx-arm64 \
-            -p:TargetFramework=net11.0
+            -p:TargetFramework=net11.0 \
+            -p:UseExternalZig=true
           dotnet publish test/Hello.csproj \
             -r osx-arm64 \
             -c Release \
             --no-restore \
             -p:TargetFramework=net11.0 \
+            -p:UseExternalZig=true \
             -p:InvariantGlobalization=true \
             --output artifacts/osx-arm64
           test -f artifacts/osx-arm64/Hello
