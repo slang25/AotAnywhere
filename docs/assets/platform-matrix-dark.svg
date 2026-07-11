@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 400" width="880" height="400" role="img" aria-label="AotAnywhere platform matrix: builds on Windows, macOS and Linux hosts; runs on Linux (glibc and musl), macOS and Windows targets. Every combination is CI-tested.">
+  <style>
+    /* palette: dark */
+    .surface      { fill: #1a1a19; stroke: rgba(255,255,255,0.10); }
+    .card         { fill: #212120; stroke: #383835; }
+    .node         { fill: rgba(57,135,229,0.10); stroke: rgba(57,135,229,0.55); }
+    .flow         { stroke: #3987e5; }
+    .flow-head    { fill: #3987e5; }
+    .ink          { fill: #ffffff; }
+    .ink2         { fill: #c3c2b7; }
+    .muted        { fill: #898781; }
+    .hair         { stroke: #2c2c2a; }
+    .good         { fill: #0ca30c; }
+
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; }
+    .mono   { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+    .colhdr { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; }
+    .osname { font-size: 14.5px; font-weight: 600; }
+    .arch   { font-size: 10.5px; }
+    .subhdr { font-size: 9.5px; letter-spacing: 0.08em; }
+    .rid    { font-size: 10px; }
+    .brand  { font-size: 15px; font-weight: 700; }
+    .cmd    { font-size: 10px; }
+    .nodesub{ font-size: 10.5px; }
+    .footer { font-size: 11.5px; }
+    .strong { font-weight: 600; }
+    .flow   { stroke-width: 2; fill: none; opacity: 0.55; stroke-linecap: round; }
+  </style>
+
+  <!-- surface -->
+  <rect class="surface" x="0.5" y="0.5" width="879" height="399" rx="14"/>
+
+  <!-- column headers -->
+  <text class="colhdr muted" x="144" y="40" text-anchor="middle">BUILDS ON</text>
+  <text class="colhdr muted" x="736" y="40" text-anchor="middle">RUNS ON</text>
+
+  <!-- host cards -->
+  <g>
+    <rect class="card" x="36.5" y="60.5" width="215" height="61" rx="10"/>
+    <text class="osname ink" x="52" y="86">Windows</text>
+    <text class="arch mono muted" x="52" y="106">x64 · x86</text>
+
+    <rect class="card" x="36.5" y="146.5" width="215" height="61" rx="10"/>
+    <text class="osname ink" x="52" y="172">macOS</text>
+    <text class="arch mono muted" x="52" y="192">arm64 · x64</text>
+
+    <rect class="card" x="36.5" y="232.5" width="215" height="61" rx="10"/>
+    <text class="osname ink" x="52" y="258">Linux</text>
+    <text class="arch mono muted" x="52" y="278">x64 · arm64</text>
+  </g>
+
+  <!-- flow: hosts -> node -->
+  <g>
+    <path class="flow" d="M252,91 C304,91 304,157 348,157"/>
+    <path class="flow" d="M252,177 L348,177"/>
+    <path class="flow" d="M252,263 C304,263 304,197 348,197"/>
+    <polygon class="flow-head" points="356,157 348,152.5 348,161.5"/>
+    <polygon class="flow-head" points="356,177 348,172.5 348,181.5"/>
+    <polygon class="flow-head" points="356,197 348,192.5 348,201.5"/>
+    <circle class="flow-head" cx="252" cy="91" r="2.5"/>
+    <circle class="flow-head" cx="252" cy="177" r="2.5"/>
+    <circle class="flow-head" cx="252" cy="263" r="2.5"/>
+  </g>
+
+  <!-- center node -->
+  <rect class="node" x="356.5" y="125.5" width="167" height="103" rx="12"/>
+  <text class="brand ink" x="440" y="160" text-anchor="middle">AotAnywhere</text>
+  <text class="cmd mono ink2" x="440" y="184" text-anchor="middle">dotnet publish -r &lt;rid&gt;</text>
+  <text class="nodesub muted" x="440" y="206" text-anchor="middle">NuGet package · Zig built in</text>
+
+  <!-- flow: node -> targets -->
+  <g>
+    <path class="flow" d="M524,157 C576,157 576,112 620,112"/>
+    <path class="flow" d="M524,177 C576,177 576,208 620,208"/>
+    <path class="flow" d="M524,197 C576,197 576,280 620,280"/>
+    <polygon class="flow-head" points="628,112 620,107.5 620,116.5"/>
+    <polygon class="flow-head" points="628,208 620,203.5 620,212.5"/>
+    <polygon class="flow-head" points="628,280 620,275.5 620,284.5"/>
+    <circle class="flow-head" cx="524" cy="157" r="2.5"/>
+    <circle class="flow-head" cx="524" cy="177" r="2.5"/>
+    <circle class="flow-head" cx="524" cy="197" r="2.5"/>
+  </g>
+
+  <!-- target cards -->
+  <g>
+    <rect class="card" x="628.5" y="60.5" width="215" height="103" rx="10"/>
+    <text class="osname ink" x="644" y="82">Linux</text>
+    <text class="subhdr muted" x="644" y="102">glibc</text>
+    <text class="subhdr muted" x="726" y="102">musl</text>
+    <text class="rid mono ink2" x="644" y="120">linux-x64</text>
+    <text class="rid mono ink2" x="644" y="136">linux-arm64</text>
+    <text class="rid mono ink2" x="644" y="152">linux-arm</text>
+    <text class="rid mono ink2" x="726" y="120">linux-musl-x64</text>
+    <text class="rid mono ink2" x="726" y="136">linux-musl-arm64</text>
+    <text class="rid mono ink2" x="726" y="152">linux-musl-arm</text>
+
+    <rect class="card" x="628.5" y="180.5" width="215" height="55" rx="10"/>
+    <text class="osname ink" x="644" y="202">macOS</text>
+    <text class="rid mono ink2" x="644" y="222">osx-arm64 · osx-x64</text>
+
+    <rect class="card" x="628.5" y="252.5" width="215" height="55" rx="10"/>
+    <text class="osname ink" x="644" y="274">Windows</text>
+    <text class="rid mono ink2" x="644" y="294">win-x64 · win-arm64</text>
+  </g>
+
+  <!-- footer -->
+  <line class="hair" x1="36" y1="336" x2="844" y2="336"/>
+  <text class="footer ink2" x="440" y="366" text-anchor="middle"><tspan class="good strong">✓&#160;&#160;</tspan><tspan class="strong ink">Every combination CI-tested&#160;—&#160;</tspan><tspan>5 hosts × 10 target RIDs, every binary built and executed on its target platform</tspan></text>
+</svg>

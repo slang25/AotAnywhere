@@ -16,6 +16,13 @@ RIDs, from a Windows, macOS or Linux machine. It uses [Zig](https://ziglang.org/
 as the linker and sysroot, and brings everything it needs with it — no extra
 SDKs, cross toolchains or system packages to install on the build machine.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/platform-matrix-dark.svg">
+    <img alt="Diagram: builds on Windows (x64, x86), macOS (arm64, x64) and Linux (x64, arm64) hosts, through AotAnywhere (dotnet publish -r <rid>), and runs on Linux glibc and musl (x64, arm64, arm), macOS (osx-arm64, osx-x64) and Windows (win-x64, win-arm64). Every combination is CI-tested: 5 hosts × 10 target RIDs." src="docs/assets/platform-matrix-light.svg" width="880">
+  </picture>
+</p>
+
 ## Quick start
 
 1. In a project that already uses Native AOT, add an `Sdk` reference to
