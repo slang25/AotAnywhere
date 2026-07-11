@@ -1,6 +1,7 @@
 The MIT License (MIT)
 
-Copyright (c) Michal Strehovsky
+Copyright (c) Michal Strehovsky (original PublishAotCross)
+Copyright (c) 2025-2026 Stuart Lang (AotAnywhere)
 
 All rights reserved.
 

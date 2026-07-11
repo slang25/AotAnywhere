@@ -1,0 +1,665 @@
+---
+// AotAnywhere — single-page site.
+// Ported from the "blueprint / technical" design direction (Claude Design),
+// with canvas chrome removed and the template placeholders wired to real values.
+const version = '1.0.4';
+const githubUrl = 'https://github.com/slang25/AotAnywhere';
+const nugetUrl = 'https://www.nuget.org/packages/StuDev.AotAnywhere';
+
+const projectSnippet = `<Project Sdk="Microsoft.NET.Sdk">
+
+  <Sdk Name="StuDev.AotAnywhere" Version="${version}" />`;
+const publishSnippet = `dotnet publish -r linux-x64
+dotnet publish -r osx-arm64
+dotnet publish -r win-x64`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}/favicon.svg`.replace(/\/+/g, '/')} />
+    <title>AotAnywhere — Cross-OS Native AOT, without the asterisk</title>
+    <meta
+      name="description"
+      content="AotAnywhere is a NuGet package that lets dotnet publish -r <rid> build Native AOT apps for Linux, macOS and Windows from any supported host. Zig supplies the linker and sysroot — no cross toolchains, no LLVM, no system packages."
+    />
+    <meta property="og:title" content="AotAnywhere — Cross-OS Native AOT, without the asterisk" />
+    <meta
+      property="og:description"
+      content="Cross-compile Native AOT .NET apps to Linux, macOS and Windows — from any of them."
+    />
+    <meta property="og:type" content="website" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style is:global>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+      }
+      body {
+        font-family: 'Space Grotesk', system-ui, sans-serif;
+        color: #eaf1ff;
+        background: #0a0f1a;
+        background-image:
+          repeating-linear-gradient(0deg, rgba(91, 157, 255, 0.05) 0 1px, transparent 1px 40px),
+          repeating-linear-gradient(90deg, rgba(91, 157, 255, 0.05) 0 1px, transparent 1px 40px);
+        min-height: 100vh;
+        padding: 48px 24px;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      a:hover {
+        opacity: 0.85;
+      }
+
+      .site {
+        max-width: 1120px;
+        margin: 0 auto;
+        background: #0a0f1a;
+        border: 1px solid #1e2b47;
+      }
+      .mono {
+        font-family: 'IBM Plex Mono', monospace;
+      }
+      .section {
+        padding: 40px 44px;
+        border-bottom: 1px solid #1e2b47;
+      }
+      .kicker {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12px;
+        letter-spacing: 0.1em;
+        color: #5b9dff;
+        margin-bottom: 20px;
+      }
+
+      /* topbar */
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        padding: 22px 44px;
+        border-bottom: 1px solid #1e2b47;
+        font-family: 'IBM Plex Mono', monospace;
+      }
+      .brandline {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        color: #fff;
+      }
+      .brandmark {
+        border: 1px solid #5b9dff;
+        color: #5b9dff;
+        width: 24px;
+        height: 24px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+      }
+      .nav {
+        display: flex;
+        gap: 22px;
+        font-size: 12.5px;
+        color: #8fa3c8;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      /* hero */
+      .hero {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        border-bottom: 1px solid #1e2b47;
+      }
+      .hero-main {
+        padding: 48px 44px;
+        border-right: 1px solid #1e2b47;
+      }
+      .hero-side {
+        padding: 48px 44px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12.5px;
+        line-height: 1.9;
+      }
+      .hero h1 {
+        font-size: 46px;
+        line-height: 1.04;
+        letter-spacing: -0.02em;
+        font-weight: 600;
+        margin: 0 0 18px;
+        color: #fff;
+      }
+      .btn-primary {
+        background: #5b9dff;
+        color: #0a0f1a;
+        font-weight: 600;
+        font-size: 14px;
+        padding: 12px 20px;
+        border-radius: 2px;
+        font-family: 'IBM Plex Mono', monospace;
+      }
+      .btn-ghost {
+        border: 1px solid #2a3a5e;
+        color: #eaf1ff;
+        font-weight: 500;
+        font-size: 14px;
+        padding: 12px 20px;
+        border-radius: 2px;
+        font-family: 'IBM Plex Mono', monospace;
+      }
+
+      /* code / copy blocks */
+      .qs-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        border: 1px solid #1e2b47;
+      }
+      .qs-cell {
+        padding: 22px;
+      }
+      .qs-cell + .qs-cell {
+        border-left: 1px solid #1e2b47;
+      }
+      .code {
+        position: relative;
+        background: #070b14;
+        border: 1px solid #1e2b47;
+      }
+      .code pre {
+        margin: 0;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12.5px;
+        line-height: 1.75;
+        color: #c3d2ee;
+        padding: 16px;
+        overflow: auto;
+      }
+      .copy-btn {
+        position: absolute;
+        top: 9px;
+        right: 9px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10.5px;
+        color: #8fa3c8;
+        background: #0a0f1a;
+        border: 1px solid #22345c;
+        padding: 4px 9px;
+        cursor: pointer;
+      }
+      .copy-btn:hover {
+        color: #eaf1ff;
+      }
+
+      /* platforms table */
+      .plat-scroll {
+        overflow-x: auto;
+      }
+      .plat {
+        border: 1px solid #1e2b47;
+        font-family: 'IBM Plex Mono', monospace;
+        min-width: 640px;
+      }
+      .plat-row {
+        display: grid;
+        grid-template-columns: 120px 130px 1fr;
+      }
+      .plat-row + .plat-row {
+        border-top: 1px solid #1e2b47;
+      }
+      .plat-head {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        color: #6b7fa8;
+        background: #0c1322;
+        border-bottom: 1px solid #1e2b47;
+      }
+      .plat-head div {
+        padding: 11px 16px;
+      }
+      .plat-os {
+        padding: 14px 16px;
+        font-family: 'Space Grotesk', sans-serif;
+        font-weight: 600;
+        color: #fff;
+      }
+      .plat-host {
+        padding: 14px 16px;
+        border-left: 1px solid #1e2b47;
+        font-size: 12px;
+        color: #c3d2ee;
+      }
+      .plat-rids {
+        padding: 14px 16px;
+        border-left: 1px solid #1e2b47;
+        font-size: 11.5px;
+        color: #8fa3c8;
+        line-height: 1.9;
+      }
+
+      /* how */
+      .step {
+        display: grid;
+        grid-template-columns: 56px 1fr;
+        border-bottom: 1px solid #1e2b47;
+        padding: 18px 0;
+      }
+      .step:last-of-type {
+        border-bottom: 0;
+      }
+      .step-n {
+        font-family: 'IBM Plex Mono', monospace;
+        color: #5b9dff;
+        font-size: 13px;
+      }
+      .step h3 {
+        font-weight: 600;
+        color: #fff;
+        margin: 0 0 5px;
+        font-size: 15px;
+      }
+      .step p {
+        color: #a9bad8;
+        font-size: 14px;
+        line-height: 1.6;
+        max-width: 640px;
+        margin: 0;
+      }
+
+      .note {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 11.5px;
+        color: #6b7fa8;
+        margin-top: 14px;
+        line-height: 1.7;
+      }
+
+      /* platform-matrix SVG theming (from the design) */
+      .matrix {
+        width: 100%;
+        border: 1px solid #1e2b47;
+        --m-surface: #0a0f1a;
+        --m-card: #0e1730;
+        --m-node: #101d3a;
+        --m-border: #22345c;
+        --m-accent: #5b9dff;
+        --m-flow: #5b9dff;
+        --m-ink: #eaf1ff;
+        --m-ink2: #b3c4e6;
+        --m-muted: #6b7fa8;
+        --m-good: #5bd6a0;
+        --m-font: 'Space Grotesk', sans-serif;
+        --m-mono: 'IBM Plex Mono', monospace;
+      }
+      .matrix svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      .matrix text {
+        font-family: var(--m-font);
+      }
+      .matrix .m-mono {
+        font-family: var(--m-mono);
+      }
+      .matrix .surface {
+        fill: var(--m-surface);
+        stroke: var(--m-border);
+      }
+      .matrix .card {
+        fill: var(--m-card);
+        stroke: var(--m-border);
+      }
+      .matrix .node {
+        fill: var(--m-node);
+        stroke: var(--m-accent);
+        stroke-width: 1.5;
+      }
+      .matrix .flow {
+        fill: none;
+        stroke: var(--m-flow);
+        stroke-width: 1.6;
+      }
+      .matrix .flow-head {
+        fill: var(--m-flow);
+      }
+      .matrix .hair {
+        stroke: var(--m-border);
+        stroke-width: 1;
+      }
+      .matrix .ink {
+        fill: var(--m-ink);
+      }
+      .matrix .ink2 {
+        fill: var(--m-ink2);
+      }
+      .matrix .muted {
+        fill: var(--m-muted);
+      }
+      .matrix .good {
+        fill: var(--m-good);
+      }
+      .matrix .colhdr {
+        font-size: 12px;
+        letter-spacing: 0.16em;
+        font-weight: 600;
+      }
+      .matrix .osname {
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .matrix .arch {
+        font-size: 12px;
+      }
+      .matrix .brand {
+        font-size: 16px;
+        font-weight: 700;
+      }
+      .matrix .cmd {
+        font-size: 11px;
+      }
+      .matrix .nodesub {
+        font-size: 10.5px;
+      }
+      .matrix .subhdr {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+      }
+      .matrix .rid {
+        font-size: 10px;
+      }
+      .matrix .footer {
+        font-size: 11.5px;
+      }
+      .matrix .strong {
+        font-weight: 600;
+      }
+
+      .fig-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+        flex-wrap: wrap;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        color: #6b7fa8;
+        margin-bottom: 16px;
+      }
+
+      .footer-bar {
+        padding: 24px 44px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 11.5px;
+        color: #6b7fa8;
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      /* responsive */
+      @media (max-width: 860px) {
+        body {
+          padding: 20px 12px;
+        }
+        .hero {
+          grid-template-columns: 1fr;
+        }
+        .hero-main {
+          border-right: 0;
+          border-bottom: 1px solid #1e2b47;
+          padding: 36px 24px;
+        }
+        .hero-side {
+          padding: 28px 24px;
+        }
+        .hero h1 {
+          font-size: 34px;
+        }
+        .section,
+        .topbar,
+        .footer-bar {
+          padding-left: 24px;
+          padding-right: 24px;
+        }
+        .qs-grid {
+          grid-template-columns: 1fr;
+        }
+        .qs-cell + .qs-cell {
+          border-left: 0;
+          border-top: 1px solid #1e2b47;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="site">
+      <!-- topbar -->
+      <header class="topbar">
+        <div class="brandline"><span class="brandmark">A</span>AotAnywhere</div>
+        <nav class="nav">
+          <a href="#quick-start">01_quick-start</a>
+          <a href="#platforms">02_platforms</a>
+          <a href="#how">03_how</a>
+          <a href={githubUrl} style="color:#5b9dff">github</a>
+        </nav>
+      </header>
+
+      <!-- hero -->
+      <section class="hero">
+        <div class="hero-main">
+          <div class="mono" style="font-size:11.5px;letter-spacing:.14em;color:#5b9dff;margin-bottom:20px">
+            TECHNICAL NOTE — v{version}
+          </div>
+          <h1>Cross-OS Native AOT,<br />without the asterisk.</h1>
+          <p style="font-size:16px;line-height:1.6;color:#a9bad8;margin:0 0 26px;max-width:440px">
+            Native AOT refuses to link for another OS. AotAnywhere removes that limit — Zig supplies the
+            linker and sysroot, so <span class="mono" style="color:#eaf1ff">dotnet publish -r &lt;rid&gt;</span>
+            resolves for Linux, macOS and Windows from any supported host.
+          </p>
+          <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <a class="btn-primary" href={nugetUrl}>Install from NuGet →</a>
+            <a class="btn-ghost" href={githubUrl}>Source</a>
+          </div>
+        </div>
+        <div class="hero-side">
+          <div style="font-size:11px;letter-spacing:.12em;color:#6b7fa8;margin-bottom:14px">STDOUT — BEFORE / AFTER</div>
+          <div style="color:#8fa3c8"><span style="color:#5b9dff">$</span> dotnet publish -r linux-x64</div>
+          <div style="color:#ff6b6b">error : Cross-OS native compilation is not supported.</div>
+          <div style="height:14px"></div>
+          <div style="color:#6b7fa8"># + &lt;Sdk Name="StuDev.AotAnywhere" /&gt;</div>
+          <div style="color:#8fa3c8"><span style="color:#5b9dff">$</span> dotnet publish -r linux-x64</div>
+          <div style="color:#5bd6a0">✓ published · stripped · 4.2 MB</div>
+        </div>
+      </section>
+
+      <!-- figure: matrix -->
+      <section class="section">
+        <div class="fig-label"><span>FIG. 01 — HOST × TARGET MATRIX</span><span>5 HOSTS × 10 RIDS</span></div>
+        <div class="matrix">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 400" role="img" aria-label="AotAnywhere platform matrix: builds on Windows, macOS and Linux hosts, runs on Linux, macOS and Windows targets">
+            <rect class="surface" x="0.5" y="0.5" width="879" height="399" rx="0"></rect>
+            <text class="colhdr muted" x="144" y="40" text-anchor="middle">BUILDS ON</text>
+            <text class="colhdr muted" x="736" y="40" text-anchor="middle">RUNS ON</text>
+            <g>
+              <rect class="card" x="36.5" y="60.5" width="215" height="61" rx="0"></rect>
+              <text class="osname ink" x="52" y="86">Windows</text><text class="arch m-mono muted" x="52" y="106">x64 · x86</text>
+              <rect class="card" x="36.5" y="146.5" width="215" height="61" rx="0"></rect>
+              <text class="osname ink" x="52" y="172">macOS</text><text class="arch m-mono muted" x="52" y="192">arm64 · x64</text>
+              <rect class="card" x="36.5" y="232.5" width="215" height="61" rx="0"></rect>
+              <text class="osname ink" x="52" y="258">Linux</text><text class="arch m-mono muted" x="52" y="278">x64 · arm64</text>
+            </g>
+            <g>
+              <path class="flow" d="M252,91 C304,91 304,157 348,157"></path>
+              <path class="flow" d="M252,177 L348,177"></path>
+              <path class="flow" d="M252,263 C304,263 304,197 348,197"></path>
+              <polygon class="flow-head" points="356,157 348,152.5 348,161.5"></polygon>
+              <polygon class="flow-head" points="356,177 348,172.5 348,181.5"></polygon>
+              <polygon class="flow-head" points="356,197 348,192.5 348,201.5"></polygon>
+              <circle class="flow-head" cx="252" cy="91" r="2.5"></circle><circle class="flow-head" cx="252" cy="177" r="2.5"></circle><circle class="flow-head" cx="252" cy="263" r="2.5"></circle>
+            </g>
+            <rect class="node" x="356.5" y="125.5" width="167" height="103" rx="0"></rect>
+            <text class="brand ink" x="440" y="160" text-anchor="middle">AotAnywhere</text>
+            <text class="cmd m-mono ink2" x="440" y="184" text-anchor="middle">dotnet publish -r &lt;rid&gt;</text>
+            <text class="nodesub muted" x="440" y="206" text-anchor="middle">NuGet package · Zig built in</text>
+            <g>
+              <path class="flow" d="M524,157 C576,157 576,112 620,112"></path>
+              <path class="flow" d="M524,177 C576,177 576,208 620,208"></path>
+              <path class="flow" d="M524,197 C576,197 576,280 620,280"></path>
+              <polygon class="flow-head" points="628,112 620,107.5 620,116.5"></polygon>
+              <polygon class="flow-head" points="628,208 620,203.5 620,212.5"></polygon>
+              <polygon class="flow-head" points="628,280 620,275.5 620,284.5"></polygon>
+              <circle class="flow-head" cx="524" cy="157" r="2.5"></circle><circle class="flow-head" cx="524" cy="177" r="2.5"></circle><circle class="flow-head" cx="524" cy="197" r="2.5"></circle>
+            </g>
+            <g>
+              <rect class="card" x="628.5" y="60.5" width="215" height="103" rx="0"></rect>
+              <text class="osname ink" x="644" y="82">Linux</text>
+              <text class="subhdr muted" x="644" y="102">glibc</text><text class="subhdr muted" x="726" y="102">musl</text>
+              <text class="rid m-mono ink2" x="644" y="120">linux-x64</text><text class="rid m-mono ink2" x="644" y="136">linux-arm64</text><text class="rid m-mono ink2" x="644" y="152">linux-arm</text>
+              <text class="rid m-mono ink2" x="726" y="120">linux-musl-x64</text><text class="rid m-mono ink2" x="726" y="136">linux-musl-arm64</text><text class="rid m-mono ink2" x="726" y="152">linux-musl-arm</text>
+              <rect class="card" x="628.5" y="180.5" width="215" height="55" rx="0"></rect>
+              <text class="osname ink" x="644" y="202">macOS</text><text class="rid m-mono ink2" x="644" y="222">osx-arm64 · osx-x64</text>
+              <rect class="card" x="628.5" y="252.5" width="215" height="55" rx="0"></rect>
+              <text class="osname ink" x="644" y="274">Windows</text><text class="rid m-mono ink2" x="644" y="294">win-x64 · win-arm64</text>
+            </g>
+            <line class="hair" x1="36" y1="336" x2="844" y2="336"></line>
+            <text class="footer ink2" x="440" y="366" text-anchor="middle"><tspan class="good strong">✓  </tspan><tspan class="strong ink">Every combination CI-tested — </tspan><tspan>5 hosts × 10 target RIDs, every binary built and executed on its target platform</tspan></text>
+          </svg>
+        </div>
+      </section>
+
+      <!-- quick start -->
+      <section class="section" id="quick-start">
+        <div class="kicker">§01 — QUICK START</div>
+        <div class="qs-grid">
+          <div class="qs-cell">
+            <div class="mono" style="font-size:11.5px;color:#6b7fa8;margin-bottom:12px">01.1 — inside &lt;Project&gt;</div>
+            <div class="code">
+              <pre><code><span style="color:#6b7fa8">&lt;Project Sdk="Microsoft.NET.Sdk"&gt;</span>
+
+  <span style="color:#5b9dff">&lt;Sdk</span> Name=<span style="color:#5bd6a0">"StuDev.AotAnywhere"</span> Version=<span style="color:#5bd6a0">"{version}"</span> <span style="color:#5b9dff">/&gt;</span></code></pre>
+              <button class="copy-btn" data-label="copy" data-copy={projectSnippet}>copy</button>
+            </div>
+          </div>
+          <div class="qs-cell">
+            <div class="mono" style="font-size:11.5px;color:#6b7fa8;margin-bottom:12px">01.2 — publish for a RID</div>
+            <div class="code">
+              <pre><code><span style="color:#5b9dff">$</span> dotnet publish -r <span style="color:#eaf1ff">linux-x64</span>
+<span style="color:#5b9dff">$</span> dotnet publish -r <span style="color:#eaf1ff">osx-arm64</span>
+<span style="color:#5b9dff">$</span> dotnet publish -r <span style="color:#eaf1ff">win-x64</span></code></pre>
+              <button class="copy-btn" data-label="copy" data-copy={publishSnippet}>copy</button>
+            </div>
+          </div>
+        </div>
+        <div class="note">// no cross toolchains · no LLVM · no system packages · symbol stripping built in</div>
+      </section>
+
+      <!-- platforms -->
+      <section class="section" id="platforms">
+        <div class="kicker">§02 — SUPPORTED PLATFORMS</div>
+        <div class="plat-scroll">
+          <div class="plat">
+            <div class="plat-row plat-head">
+              <div>OS</div><div style="border-left:1px solid #1e2b47">HOST</div><div style="border-left:1px solid #1e2b47">TARGET RIDS</div>
+            </div>
+            <div class="plat-row">
+              <div class="plat-os">Linux</div>
+              <div class="plat-host">x64 · arm64</div>
+              <div class="plat-rids">linux-x64 · linux-arm64 · linux-arm · linux-musl-x64 · linux-musl-arm64 · linux-musl-arm</div>
+            </div>
+            <div class="plat-row">
+              <div class="plat-os">macOS</div>
+              <div class="plat-host">x64 · arm64</div>
+              <div class="plat-rids">osx-arm64 · osx-x64</div>
+            </div>
+            <div class="plat-row">
+              <div class="plat-os">Windows</div>
+              <div class="plat-host">x86 · x64</div>
+              <div class="plat-rids">win-x64 · win-arm64</div>
+            </div>
+          </div>
+        </div>
+        <div class="note">// armv7 (linux-arm, linux-musl-arm) → net9.0+ · macOS output needs signing before distribution · win-arm64 host not yet supported</div>
+      </section>
+
+      <!-- how -->
+      <section class="section" id="how" style="border-bottom:0">
+        <div class="kicker">§03 — HOW IT WORKS</div>
+        <div style="border-top:1px solid #1e2b47">
+          <div class="step">
+            <div class="step-n">01</div>
+            <div>
+              <h3>Zig is the linker &amp; sysroot</h3>
+              <p>Links run directly through <span class="mono" style="color:#eaf1ff">zig cc</span>, which also supplies the sysroot for every target — the mechanism that makes cross-OS AOT possible.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-n">02</div>
+            <div>
+              <h3>Brings everything with it</h3>
+              <p>No cross toolchains or system packages on the build machine. Bundled Apple sysroot stubs and symbol stripping — no LLVM install.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-n">03</div>
+            <div>
+              <h3>Restored via the Sdk form</h3>
+              <p>SDK props evaluate during restore, so the host-specific Zig package is fetched the first time with no further setup.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-n">04</div>
+            <div>
+              <h3>Validated end to end</h3>
+              <p>A CI matrix of 5 hosts × 10 target RIDs builds and executes every binary on its target platform on every change.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- footer -->
+      <footer class="footer-bar">
+        <span>MIT · fork-turned-rewrite of <a href="https://github.com/MichalStrehovsky/PublishAotCross" style="color:#8fa3c8">PublishAotCross</a></span>
+        <span style="color:#5b9dff">dotnet publish -r &lt;rid&gt; → anywhere</span>
+      </footer>
+    </div>
+
+    <script>
+      // Copy-to-clipboard for the code blocks.
+      document.querySelectorAll<HTMLButtonElement>('.copy-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const txt = btn.getAttribute('data-copy') ?? '';
+          navigator.clipboard?.writeText(txt);
+          const label = btn.getAttribute('data-label') ?? 'copy';
+          btn.textContent = '✓ copied';
+          setTimeout(() => {
+            btn.textContent = label;
+          }, 1400);
+        });
+      });
+    </script>
+  </body>
+</html>
