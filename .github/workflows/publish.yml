@@ -3,8 +3,8 @@ name: Publish to NuGet
 # One-button release: dispatch this workflow with a version -> it packs,
 # publishes StuDev.AotAnywhere to nuget.org, then creates the v<version> tag and
 # GitHub release. It does NOT re-run the cross-platform matrix: the commit being
-# released has already been validated on its PR and again on the push to master,
-# so a third full run at release time is wasted CI. (Run
+# released has already been validated on its PR, so a second full run at
+# release time is wasted CI. (Run
 # cross-platform-validation.yml manually if you ever want an extra pre-release
 # check.) Dispatched (not tag-triggered) so no PAT is
 # needed: GITHUB_TOKEN can trigger workflow_dispatch (unlike a tag push, which it

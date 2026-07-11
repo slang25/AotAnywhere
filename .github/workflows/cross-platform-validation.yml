@@ -11,23 +11,27 @@ on:
       - '**/*.md'
       - 'LICENSE.TXT'
       - '.github/workflows/deploy-site.yml'
-  push:
-    branches: [ master ]
-    paths-ignore:
-      - 'site/**'
-      - 'docs/**'
-      - '**/*.md'
-      - 'LICENSE.TXT'
-      - '.github/workflows/deploy-site.yml'
+  # No push: trigger. A merged PR's tree was already validated on the PR, so
+  # re-running the full cross-OS matrix on the merge commit only doubled the
+  # spend for no new signal. For an extra pre-release sweep, dispatch manually
+  # (optionally with full_matrix=true).
   workflow_dispatch:
+    inputs:
+      full_matrix:
+        description: 'Build from every host platform (adds the macOS x64 and Linux arm64 hosts on top of the default windows/linux/macos-arm64 set)'
+        type: boolean
+        default: false
   # Available for on-demand full-matrix runs (e.g. a manual pre-release check).
-  # The release workflow (publish.yml) no longer calls this: the tagged commit
-  # has already been validated on its PR and again on the push to master.
+  # The release workflow (publish.yml) no longer calls this.
   workflow_call:
+    inputs:
+      full_matrix:
+        type: boolean
+        default: false
 
 # A new push to the same PR supersedes the running validation; cancel it so
-# stacked runs don't starve the limited macOS runner pool. Push/dispatch runs
-# are never cancelled, only coalesced in the queue.
+# stacked runs don't starve the limited macOS runner pool. Manual dispatch/call
+# runs are never cancelled, only coalesced in the queue.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -116,24 +120,46 @@ jobs:
           name: test-signing-cert
           path: test-cert/
 
+  # Choose which host platforms build the matrix. Cross-compilation output is
+  # driven by the *target* triple, not the host's own OS/arch, so the default
+  # set carries one host per host-OS family - windows, linux (x64) and macos
+  # (arm64) - which is enough to prove "you can cross-compile from each OS".
+  # The extra same-OS hosts (macOS x64, Linux arm64) only re-prove host-arch
+  # independence, so they run on demand: dispatch/call with full_matrix=true
+  # (e.g. a pre-release sweep). Either way every host still builds all ten
+  # targets and every target is still validated natively - only the set of
+  # build *hosts* narrows.
+  setup:
+    runs-on: ubuntu-latest
+    name: Select host matrix
+    outputs:
+      build-matrix: ${{ steps.select.outputs.build-matrix }}
+      host-sources: ${{ steps.select.outputs.host-sources }}
+    steps:
+      - name: Select build hosts
+        id: select
+        shell: bash
+        env:
+          FULL_MATRIX: ${{ inputs.full_matrix }}
+        run: |
+          if [ "$FULL_MATRIX" = "true" ]; then
+            echo "Selected full host matrix (all five hosts)."
+            echo 'build-matrix={"include":[{"host":"windows-latest","host-name":"windows"},{"host":"ubuntu-latest","host-name":"linux"},{"host":"macos-15-intel","host-name":"macos-x64"},{"host":"macos-latest","host-name":"macos-arm64"},{"host":"ubuntu-24.04-arm","host-name":"linux-arm64"}]}' >> "$GITHUB_OUTPUT"
+            echo 'host-sources=windows,linux,macos-x64,macos-arm64,linux-arm64' >> "$GITHUB_OUTPUT"
+          else
+            echo "Selected minimal host matrix (windows, linux, macos-arm64)."
+            echo 'build-matrix={"include":[{"host":"windows-latest","host-name":"windows"},{"host":"ubuntu-latest","host-name":"linux"},{"host":"macos-latest","host-name":"macos-arm64"}]}' >> "$GITHUB_OUTPUT"
+            echo 'host-sources=windows,linux,macos-arm64' >> "$GITHUB_OUTPUT"
+          fi
+
   # Build matrix: every host builds all ten targets; the target list lives
-  # in the parallel build steps below (grouped glibc/musl/macOS/Windows).
+  # in the parallel build steps below (grouped glibc/musl/macOS/Windows). The
+  # host set is chosen by the setup job (minimal by default, full on demand).
   build:
-    needs: [test-cert]
+    needs: [test-cert, setup]
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - host: windows-latest
-            host-name: windows
-          - host: ubuntu-latest
-            host-name: linux
-          - host: macos-15-intel
-            host-name: macos-x64
-          - host: macos-latest
-            host-name: macos-arm64
-          - host: ubuntu-24.04-arm
-            host-name: linux-arm64
+      matrix: ${{ fromJSON(needs.setup.outputs.build-matrix) }}
 
     runs-on: ${{ matrix.host }}
     name: Build from ${{ matrix.host-name }}
@@ -260,7 +286,7 @@ jobs:
 
   # Validation: Test running the built binaries where possible
   validate:
-    needs: build
+    needs: [build, setup]
     if: always() # Run even if some builds failed
     strategy:
       fail-fast: false
@@ -273,12 +299,10 @@ jobs:
           - runner: ubuntu-latest
             runner-name: ubuntu-x64
             test-targets: "linux-x64,linux-musl-x64,lib-linux-x64,linux-x64-selftest"
-            host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
           # Test ARM64 binaries on Ubuntu ARM64 (now runnable on hosted ARM runners)
           - runner: ubuntu-24.04-arm
             runner-name: ubuntu-arm64
             test-targets: "linux-arm64,linux-musl-arm64"
-            host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
           # Test ARMv7 binaries under QEMU on Ubuntu x64: there is no hosted
           # armv7 runner, and the hosted arm64 runners (Cobalt 100) dropped
           # 32-bit AArch32 execution, so emulation is the only option. The
@@ -287,18 +311,15 @@ jobs:
           - runner: ubuntu-latest
             runner-name: ubuntu-armv7-qemu
             test-targets: "linux-arm,linux-musl-arm"
-            host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
             qemu: true
           # Test macOS binaries on macOS x64
           - runner: macos-15-intel
             runner-name: macos-x64
             test-targets: "osx-x64"
-            host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
           # Test macOS binaries on macOS ARM64
           - runner: macos-latest
             runner-name: macos-arm64
             test-targets: "osx-arm64"
-            host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
           # Test Windows x64 binaries on Windows x64. The windows-host builds
           # are MSVC-linked (package inert there); the others are zig-linked
           # by the shim's link personality, so this is where the MinGW-glued
@@ -306,13 +327,10 @@ jobs:
           - runner: windows-latest
             runner-name: windows-x64
             test-targets: "win-x64"
-            host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
           # Test Windows ARM64 binaries on the hosted arm64 Windows runner.
           - runner: windows-11-arm
             runner-name: windows-arm64
             test-targets: "win-arm64"
-            host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
-    
     runs-on: ${{ matrix.runner }}
     name: Validate on ${{ matrix.runner-name }}
     
@@ -341,12 +359,12 @@ jobs:
           echo "=== Cross-Platform Binary Validation Report ==="
           echo "Runner: ${{ matrix.runner-name }}"
           echo "Testing targets: ${{ matrix.test-targets }}"
-          echo "From host sources: ${{ matrix.host-sources }}"
+          echo "From host sources: ${{ needs.setup.outputs.host-sources }}"
           echo "Timestamp: $(date -u)"
           echo ""
           
           # Parse host sources and targets
-          IFS=',' read -ra HOST_ARRAY <<< "${{ matrix.host-sources }}"
+          IFS=',' read -ra HOST_ARRAY <<< "${{ needs.setup.outputs.host-sources }}"
           IFS=',' read -ra TARGET_ARRAY <<< "${{ matrix.test-targets }}"
 
           # macOS runners have no GNU `timeout` (coreutils installs it as
@@ -559,18 +577,23 @@ jobs:
 
   # Report: Summarize the platform support matrix
   report:
-    needs: [build, validate]
+    needs: [build, validate, setup]
     if: always()
     runs-on: ubuntu-latest
     name: Platform Support Report
-    
+
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         continue-on-error: true
-      
+
       - name: Generate platform support matrix
         shell: bash
+        # The hosts this run actually built (minimal set by default, all five
+        # on a full-matrix dispatch); the report columns/rows follow suit so a
+        # minimal run doesn't show the unbuilt hosts as spurious failures.
+        env:
+          ACTIVE_HOSTS: ${{ needs.setup.outputs.host-sources }}
         run: |
           echo "# 🏗️ AotAnywhere Platform Support Matrix" > platform-report.md
           echo "" >> platform-report.md
@@ -583,7 +606,7 @@ jobs:
           echo "|---------------|---------|------------------------|---------|" >> platform-report.md
           
           # Check which artifacts exist
-          for host in windows linux macos-x64 macos-arm64 linux-arm64; do
+          for host in ${ACTIVE_HOSTS//,/ }; do
             if [ -d "binaries-$host" ]; then
               target_count=$(ls "binaries-$host" 2>/dev/null | wc -l)
               targets=$(ls "binaries-$host" 2>/dev/null | tr '\n' ', ' | sed 's/,$//')
@@ -613,36 +636,47 @@ jobs:
           echo "" >> platform-report.md
           echo "## Target Platform Support" >> platform-report.md
           echo "" >> platform-report.md
-          echo "| Target Platform | Windows Host | Linux Host | macOS x64 Host | macOS ARM64 Host | Linux ARM64 Host | Runtime Validation |" >> platform-report.md
-          echo "|-----------------|--------------|------------|----------------|------------------|------------------|-------------------|" >> platform-report.md
+
+          # One "Host" column per host this run built (see the setup job); a
+          # minimal run has three, a full-matrix run five.
+          host_label() {
+            case "$1" in
+              windows)     echo "Windows Host" ;;
+              linux)       echo "Linux Host" ;;
+              macos-x64)   echo "macOS x64 Host" ;;
+              macos-arm64) echo "macOS ARM64 Host" ;;
+              linux-arm64) echo "Linux ARM64 Host" ;;
+              *)           echo "$1 Host" ;;
+            esac
+          }
+          header="| Target Platform |"
+          divider="|-----------------|"
+          for host in ${ACTIVE_HOSTS//,/ }; do
+            header="$header $(host_label "$host") |"
+            divider="$divider---|"
+          done
+          header="$header Runtime Validation |"
+          divider="$divider-------------------|"
+          echo "$header" >> platform-report.md
+          echo "$divider" >> platform-report.md
 
           for target in linux-x64 linux-arm64 linux-arm linux-musl-x64 linux-musl-arm64 linux-musl-arm osx-x64 osx-arm64 win-x64 win-arm64; do
             bin="Hello"
             [[ "$target" == win-* ]] && bin="Hello.exe"
-            win_status="❌"
-            linux_status="❌"
-            mac_x64_status="❌"
-            mac_arm64_status="❌"
-            linux_arm64_status="❌"
+            row="| $target |"
+            # Runtime validation: every built target has a native validation
+            # runner (x64/ARM64 Linux and Windows, both macOS architectures).
             runtime_status="❌ No binaries"
-
-            # Check build status
-            [ -f "binaries-windows/$target/$bin" ] && win_status="✅"
-            [ -f "binaries-linux/$target/$bin" ] && linux_status="✅"
-            [ -f "binaries-macos-x64/$target/$bin" ] && mac_x64_status="✅"
-            [ -f "binaries-macos-arm64/$target/$bin" ] && mac_arm64_status="✅"
-            [ -f "binaries-linux-arm64/$target/$bin" ] && linux_arm64_status="✅"
-
-            # Runtime validation: every target now has a validation runner
-            # (x64 and ARM64 Linux and Windows, plus both macOS architectures).
-            for host in windows linux macos-x64 macos-arm64 linux-arm64; do
+            for host in ${ACTIVE_HOSTS//,/ }; do
               if [ -f "binaries-$host/$target/$bin" ]; then
+                row="$row ✅ |"
                 runtime_status="✅ Testable"
-                break
+              else
+                row="$row ❌ |"
               fi
             done
-
-            echo "| $target | $win_status | $linux_status | $mac_x64_status | $mac_arm64_status | $linux_arm64_status | $runtime_status |" >> platform-report.md
+            row="$row $runtime_status |"
+            echo "$row" >> platform-report.md
           done
           
           echo "" >> platform-report.md
@@ -654,8 +688,8 @@ jobs:
           echo "" >> platform-report.md
           echo "| Host → Target | Binary Size | Architecture |" >> platform-report.md
           echo "|---------------|-------------|--------------|" >> platform-report.md
-          
-          for host in windows linux macos-x64 macos-arm64 linux-arm64; do
+
+          for host in ${ACTIVE_HOSTS//,/ }; do
             if [ -d "binaries-$host" ]; then
               for target_dir in binaries-$host/*/; do
                 bin="${target_dir}Hello"
@@ -684,7 +718,7 @@ jobs:
           echo "" >> platform-report.md
           echo "## Additional Notes" >> platform-report.md
           echo "- This matrix shows cross-compilation capabilities from different host platforms" >> platform-report.md
-          echo "- Builds run from x64 and ARM64 Windows, Linux, and macOS hosts" >> platform-report.md
+          echo "- Builds run from the selected host platforms ($ACTIVE_HOSTS); a full-matrix dispatch adds the macOS x64 and Linux arm64 hosts" >> platform-report.md
           echo "- Runtime validation covers Linux, macOS and Windows (x64 and ARM64) targets on matching hosted runners; ARMv7 targets run under QEMU in arm/v7 containers" >> platform-report.md
           echo "- All builds use .NET 8.0 with Native AOT and Zig for cross-compilation, except the ARMv7 targets which use .NET 9.0 (their ILCompiler packs only ship for .NET 9+)" >> platform-report.md
           echo "" >> platform-report.md
