@@ -72,9 +72,10 @@ jobs:
           # The strip pipeline must have produced the symbol sidecar.
           test -f test/bin/Release/net8.0/linux-x64/publish/Hello.dbg
           # Opt-in UPX compression. Same obj, so the link is up to date and
-          # only the pack step runs; publish to a separate folder so both
-          # variants reach the validate job. (The default publish folder
-          # keeps its uncompressed copy - UPX rewrites the obj binary only.)
+          # only the copy + pack steps run; publish to a separate folder so
+          # both variants reach the validate job. UPX packs the published copy
+          # in this folder, leaving the shared obj (and the default publish
+          # above) uncompressed.
           dotnet publish -r linux-x64 -c Release -p:AotAnywhereUpxCompress=true -o test/bin/upx-publish test/Hello.csproj
       - name: Upload test binary
         uses: actions/upload-artifact@v7

@@ -22,29 +22,28 @@
        a Windows host - so the option also covers natively-linked (MSVC)
        publishes. -->
 
-  <PropertyGroup>
-    <_AotAnywhereUpxSemaphore>$(IntermediateOutputPath)upx.semaphore</_AotAnywhereUpxSemaphore>
-  </PropertyGroup>
+  <!-- Compresses the published binary after the SDK's CopyNativeBinary has
+       placed it in $(PublishDir). Packing the published copy - not the
+       shared intermediate $(NativeBinary) - keeps the compression scoped to
+       this one publish: the obj binary is left untouched, so a later publish
+       without the opt-in (or to a different -o folder) still emits an
+       uncompressed binary instead of silently inheriting the packed one.
+       By the time CopyNativeBinary runs the binary is final on every flow:
+       the DirectLink takeovers (including the Linux symbol strip) run
+       BeforeTargets="LinkNative", and a native MSVC link strips inside
+       LinkNative itself. The .dbg/.pdb symbol sidecars are separate files
+       and stay uncompressed.
 
-  <!-- Compresses $(NativeBinary) in place right after the link, so the
-       publish copy picks up the packed binary. By the time LinkNative
-       finishes the binary is final on every flow: the DirectLink takeovers
-       (including the Linux symbol strip) run BeforeTargets="LinkNative",
-       and a native MSVC link strips inside LinkNative itself. The .dbg/.pdb
-       symbol sidecars are separate files and stay uncompressed.
-
-       The semaphore keeps the target incremental: UPX refuses to pack an
-       already-packed file, so this must not run twice on the same link
-       output. A relink refreshes $(NativeBinary), which makes it newer than
-       the semaphore and re-triggers the pack. -->
+       No incrementality guard is needed: CopyNativeBinary re-copies a fresh
+       uncompressed binary from obj on every publish, so UPX always packs an
+       unpacked file and never hits its refuse-to-repack error. -->
   <Target Name="UpxCompressBinary"
           Condition="'$(AotAnywhereUpxCompress)' == 'true'"
-          AfterTargets="LinkNative"
-          Inputs="$(NativeBinary)"
-          Outputs="$(_AotAnywhereUpxSemaphore)">
+          AfterTargets="CopyNativeBinary">
 
     <PropertyGroup>
       <AotAnywhereUpxPath Condition="'$(AotAnywhereUpxPath)' == ''">upx</AotAnywhereUpxPath>
+      <_AotAnywhereUpxPublishedBinary>$(PublishDir)$(TargetName)$(NativeBinaryExt)</_AotAnywhereUpxPublishedBinary>
 
       <_UpxArgs>--best</_UpxArgs>
       <_UpxArgs Condition="'$(AotAnywhereUpxLzma)' == 'true'">$(_UpxArgs) --lzma</_UpxArgs>
@@ -73,13 +72,8 @@
     <Error Condition="'$(_UpxProbeExitCode)' != '0'"
            Text="UPX was not found at '$(AotAnywhereUpxPath)'. Install it from https://github.com/upx/upx/releases (or 'apt install upx-ucl' / 'brew install upx' / 'winget install upx'), or point AotAnywhereUpxPath at the executable." />
 
-    <Message Importance="high" Text="Compressing $(NativeBinary) with UPX" />
-    <Exec Command="&quot;$(AotAnywhereUpxPath)&quot; $(_UpxArgs) &quot;$(NativeBinary)&quot;" />
-
-    <Touch Files="$(_AotAnywhereUpxSemaphore)" AlwaysCreate="true" />
-    <ItemGroup>
-      <FileWrites Include="$(_AotAnywhereUpxSemaphore)" />
-    </ItemGroup>
+    <Message Importance="high" Text="Compressing $(_AotAnywhereUpxPublishedBinary) with UPX" />
+    <Exec Command="&quot;$(AotAnywhereUpxPath)&quot; $(_UpxArgs) &quot;$(_AotAnywhereUpxPublishedBinary)&quot;" />
 
   </Target>
 
