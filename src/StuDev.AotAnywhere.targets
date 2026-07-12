@@ -5,4 +5,10 @@
        links win-* natively with MSVC, so the package stays out of the way). -->
   <Import Project="Crosscompile.targets" Condition="$(RuntimeIdentifier.Contains('linux')) or $(RuntimeIdentifier.Contains('osx')) or ($(RuntimeIdentifier.StartsWith('win')) and !$([MSBuild]::IsOSPlatform('Windows')))" />
 
+  <!-- Opt-in UPX compression (AotAnywhereUpxCompress=true). Imported without
+       the RID condition above so it also covers win-* targets linked
+       natively on a Windows host; everything inside is gated on the opt-in
+       property. -->
+  <Import Project="UpxCompress.targets" />
+
 </Project>

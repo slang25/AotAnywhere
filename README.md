@@ -131,6 +131,41 @@ dotnet publish -r linux-x64 /p:InvariantGlobalization=true
 Note that invariant globalization disables culture-specific formatting, sorting,
 and other globalization features.
 
+## Compressing the output with UPX
+
+The published binary can optionally be compressed with
+[UPX](https://upx.github.io/) (the same idea as
+[PublishAotCompressed](https://github.com/MichalStrehovsky/PublishAotCompressed)),
+typically halving its on-disk size. UPX produces a self-extracting executable
+that unpacks itself in memory at launch; the startup cost is usually not
+observable.
+
+Install UPX on the build machine (from the
+[releases page](https://github.com/upx/upx/releases), or
+`apt install upx-ucl` / `brew install upx` / `winget install upx`), then:
+
+```bash
+dotnet publish -r linux-x64 /p:AotAnywhereUpxCompress=true
+```
+
+Knobs:
+
+- `AotAnywhereUpxPath` — path to the UPX executable if it is not on `PATH`.
+- `AotAnywhereUpxLzma=true` — LZMA compression: smaller output, slower startup.
+- `AotAnywhereUpxArgs` — extra arguments appended to the UPX command line
+  (the default is `--best`).
+
+Things to know:
+
+- **Works for Linux and Windows x64/x86 targets.** UPX cannot pack macOS
+  binaries (its Mach-O support was removed; macOS 13+ refuses to run packed
+  binaries) or win-arm64 (no ARM64 PE support) — publishing those with the
+  option set fails with an error rather than producing broken output.
+- **Windows antivirus false positives.** UPX-packed executables are a common
+  malware wrapper, so some scanners flag them. Weigh that before shipping
+  compressed Windows binaries.
+- **Executables only** — native libraries (`NativeLib`) cannot be packed.
+
 ## Documentation
 
 - [macOS targets](docs/macos-targets.md) — Apple linker stubs, and signing &

@@ -54,6 +54,14 @@ jobs:
           key: nuget-ci-${{ runner.os }}-${{ hashFiles('src/AotAnywhere.nuproj', 'src/Crosscompile.targets', 'test/Hello.csproj') }}
           restore-keys: |
             nuget-ci-${{ runner.os }}-
+      # For the AotAnywhereUpxCompress publish below. Pinned release download:
+      # no winget/choco on the runner path to flake.
+      - name: Install UPX
+        shell: bash
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/upx.zip" https://github.com/upx/upx/releases/download/v5.2.0/upx-5.2.0-win64.zip
+          unzip -q "$RUNNER_TEMP/upx.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/upx-5.2.0-win64" >> "$GITHUB_PATH"
       - name: Build
         shell: bash
         run: |
@@ -63,11 +71,22 @@ jobs:
           dotnet publish -r linux-x64 -c Release test/Hello.csproj
           # The strip pipeline must have produced the symbol sidecar.
           test -f test/bin/Release/net8.0/linux-x64/publish/Hello.dbg
+          # Opt-in UPX compression. Same obj, so the link is up to date and
+          # only the copy + pack steps run; publish to a separate folder so
+          # both variants reach the validate job. UPX packs the published copy
+          # in this folder, leaving the shared obj (and the default publish
+          # above) uncompressed.
+          dotnet publish -r linux-x64 -c Release -p:AotAnywhereUpxCompress=true -o test/bin/upx-publish test/Hello.csproj
       - name: Upload test binary
         uses: actions/upload-artifact@v7
         with:
           name: Hello
           path: test/bin/Release/net8.0/linux-x64/publish/Hello
+      - name: Upload UPX-compressed test binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: HelloUpx
+          path: test/bin/upx-publish/Hello
 
   validate:
     needs: build_and_test
@@ -78,11 +97,13 @@ jobs:
         uses: actions/download-artifact@v8
       - name: Launch
         run: |
-          # download-artifact places the single-file "Hello" artifact at a path
-          # that varies with the action version, so locate the binary rather
-          # than hardcoding ./Hello/Hello.
-          bin=$(find . -type f -name Hello | head -1)
+          # download-artifact places each artifact at a path that varies with
+          # the action version, so locate the binaries by their artifact
+          # directory rather than hardcoding ./Hello/Hello.
+          bin=$(find . -type f -path '*/Hello/Hello' | head -1)
+          upxbin=$(find . -type f -path '*/HelloUpx/Hello' | head -1)
           if [ -z "$bin" ]; then echo "Hello binary not found" >&2; exit 1; fi
+          if [ -z "$upxbin" ]; then echo "HelloUpx binary not found" >&2; exit 1; fi
           # The binary was stripped by the managed AotAnywhereStrip task;
           # check binutils can parse the rewritten section table and that
           # the strip actually happened, then run it.
@@ -92,3 +113,13 @@ jobs:
           echo "Launching $bin"
           chmod +x "$bin"
           "$bin"
+          # The UPX variant must actually be packed (magic present, smaller
+          # than the plain binary) and still run - UPX unpacks it in memory
+          # at launch.
+          grep -q 'UPX!' "$upxbin" || { echo "UPX magic not found in compressed binary" >&2; exit 1; }
+          plain_size=$(stat -c%s "$bin"); upx_size=$(stat -c%s "$upxbin")
+          echo "Plain: $plain_size bytes, UPX: $upx_size bytes"
+          if [ "$upx_size" -ge "$plain_size" ]; then echo "UPX-compressed binary is not smaller than the plain one" >&2; exit 1; fi
+          echo "Launching $upxbin"
+          chmod +x "$upxbin"
+          "$upxbin"

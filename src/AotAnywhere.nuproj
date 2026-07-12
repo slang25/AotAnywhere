@@ -46,6 +46,10 @@
       <Pack>true</Pack>
       <PackagePath>build</PackagePath>
     </None>
+    <None Include="UpxCompress.targets">
+      <Pack>true</Pack>
+      <PackagePath>build</PackagePath>
+    </None>
     <!-- Compiled into every macOS link by AotAnywhereDirectLinkMacNative
          (referenced via $(MSBuildThisFileDirectory)); must sit next to the
          targets in build/. -->

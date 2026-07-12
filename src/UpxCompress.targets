@@ -1,0 +1,80 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- Opt-in UPX compression of the published binary
+       (AotAnywhereUpxCompress=true) - the same idea as Michal Strehovsky's
+       PublishAotCompressed package. UPX rewrites the binary as a
+       self-extracting executable that unpacks itself in memory at launch;
+       the startup cost is typically not observable and the on-disk size
+       drops by 50% or more.
+
+       UPX is not bundled (its GPL license and per-host binaries don't fit
+       this package); it must be on PATH, or pointed at with
+       AotAnywhereUpxPath - the same contract as rcodesign in
+       Crosscompile.targets.
+
+       Format support is UPX's, not ours: Linux ELF (x64/arm64/arm, glibc
+       and musl) and Windows x64/x86 PE pack fine; macOS Mach-O support was
+       removed from UPX (macOS 13+ kills packed binaries) and arm64 PE was
+       never supported, so osx-* and win-arm64 targets error below.
+
+       Imported unconditionally from StuDev.AotAnywhere.targets - unlike
+       Crosscompile.targets, which stays out of the way for win-* targets on
+       a Windows host - so the option also covers natively-linked (MSVC)
+       publishes. -->
+
+  <!-- Compresses the published binary after the SDK's CopyNativeBinary has
+       placed it in $(PublishDir). Packing the published copy - not the
+       shared intermediate $(NativeBinary) - keeps the compression scoped to
+       this one publish: the obj binary is left untouched, so a later publish
+       without the opt-in (or to a different -o folder) still emits an
+       uncompressed binary instead of silently inheriting the packed one.
+       By the time CopyNativeBinary runs the binary is final on every flow:
+       the DirectLink takeovers (including the Linux symbol strip) run
+       BeforeTargets="LinkNative", and a native MSVC link strips inside
+       LinkNative itself. The .dbg/.pdb symbol sidecars are separate files
+       and stay uncompressed.
+
+       No incrementality guard is needed: CopyNativeBinary re-copies a fresh
+       uncompressed binary from obj on every publish, so UPX always packs an
+       unpacked file and never hits its refuse-to-repack error. -->
+  <Target Name="UpxCompressBinary"
+          Condition="'$(AotAnywhereUpxCompress)' == 'true'"
+          AfterTargets="CopyNativeBinary">
+
+    <PropertyGroup>
+      <AotAnywhereUpxPath Condition="'$(AotAnywhereUpxPath)' == ''">upx</AotAnywhereUpxPath>
+      <_AotAnywhereUpxPublishedBinary>$(PublishDir)$(TargetName)$(NativeBinaryExt)</_AotAnywhereUpxPublishedBinary>
+
+      <_UpxArgs>--best</_UpxArgs>
+      <_UpxArgs Condition="'$(AotAnywhereUpxLzma)' == 'true'">$(_UpxArgs) --lzma</_UpxArgs>
+      <!-- UPX mis-detects some x86 PEs and needs the nudge (same workaround
+           as PublishAotCompressed). -->
+      <_UpxArgs Condition="$(RuntimeIdentifier.EndsWith('-x86'))">$(_UpxArgs) --force</_UpxArgs>
+      <_UpxArgs Condition="'$(AotAnywhereUpxArgs)' != ''">$(_UpxArgs) $(AotAnywhereUpxArgs)</_UpxArgs>
+    </PropertyGroup>
+
+    <Error Condition="$(RuntimeIdentifier.StartsWith('osx'))"
+           Text="AotAnywhereUpxCompress: UPX cannot compress macOS binaries - its Mach-O support was removed (macOS 13+ refuses to run packed binaries). Publish osx-* targets without AotAnywhereUpxCompress." />
+    <Error Condition="'$(RuntimeIdentifier)' == 'win-arm64'"
+           Text="AotAnywhereUpxCompress: UPX has no ARM64 PE support, so win-arm64 output cannot be compressed." />
+    <Error Condition="'$(NativeLib)' != ''"
+           Text="AotAnywhereUpxCompress: UPX can only compress executables; this project publishes a native library (NativeLib=$(NativeLib))." />
+
+    <!-- Probe for UPX first to fail with instructions instead of a cryptic
+         'command not found'. -->
+    <Exec Command="&quot;$(AotAnywhereUpxPath)&quot; --version"
+          IgnoreExitCode="true"
+          EchoOff="true"
+          StandardOutputImportance="low"
+          StandardErrorImportance="low">
+      <Output TaskParameter="ExitCode" PropertyName="_UpxProbeExitCode" />
+    </Exec>
+    <Error Condition="'$(_UpxProbeExitCode)' != '0'"
+           Text="UPX was not found at '$(AotAnywhereUpxPath)'. Install it from https://github.com/upx/upx/releases (or 'apt install upx-ucl' / 'brew install upx' / 'winget install upx'), or point AotAnywhereUpxPath at the executable." />
+
+    <Message Importance="high" Text="Compressing $(_AotAnywhereUpxPublishedBinary) with UPX" />
+    <Exec Command="&quot;$(AotAnywhereUpxPath)&quot; $(_UpxArgs) &quot;$(_AotAnywhereUpxPublishedBinary)&quot;" />
+
+  </Target>
+
+</Project>
