@@ -15,6 +15,11 @@ internal static class Harness
         Path.Combine(RepoRoot, "src") + Path.DirectorySeparatorChar;
     static readonly string HarnessProj =
         Path.Combine(RepoRoot, "tests", "AotAnywhere.MSBuild.Tests", "harness", "Harness.proj");
+    public const string ToolPackHarness = "ToolPackHarness.proj";
+
+    static string ProjPath(string? proj) =>
+        proj is null ? HarnessProj
+                     : Path.Combine(Path.GetDirectoryName(HarnessProj)!, proj);
 
     static string FindRepoRoot()
     {
@@ -46,12 +51,13 @@ internal static class Harness
     static readonly object BuildLock = new();
 
     // Executes a single target and returns its results (properties/items it set).
-    public static RunResult Run(string target, IDictionary<string, string> globals)
+    // `proj` selects an alternate harness project (e.g. ToolPackHarness).
+    public static RunResult Run(string target, IDictionary<string, string> globals, string? proj = null)
     {
         lock (BuildLock)
         {
             var collection = new ProjectCollection(Globals(globals));
-            var instance = collection.LoadProject(HarnessProj).CreateProjectInstance();
+            var instance = collection.LoadProject(ProjPath(proj)).CreateProjectInstance();
             var logger = new ErrorLogger();
             var success = instance.Build(new[] { target }, new ILogger[] { logger });
             return new RunResult(success, instance, logger.Errors);

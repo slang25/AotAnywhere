@@ -131,6 +131,43 @@ dotnet publish -r linux-x64 /p:InvariantGlobalization=true
 Note that invariant globalization disables culture-specific formatting, sorting,
 and other globalization features.
 
+## Packing .NET tools for every platform (.NET 11+)
+
+Since .NET 10, a [.NET tool](https://learn.microsoft.com/dotnet/core/tools/global-tools)
+can ship native AOT binaries as one small "pointer" package plus one
+RID-specific package per platform — `dotnet tool install` downloads just the
+binary matching the user's machine. A single `dotnet pack` builds all of them,
+but the base SDK only packs the RIDs the host's native toolchain can build
+(e.g. a linux-x64 machine packs only linux-x64).
+
+With AotAnywhere referenced, that limit goes away: `dotnet pack` on one
+machine produces packages for **every** RID listed in
+`ToolPackageRuntimeIdentifiers` (or `RuntimeIdentifiers`), via the SDK's
+tool-packaging extensibility point
+([dotnet/sdk#55250](https://github.com/dotnet/sdk/pull/55250)).
+
+```xml
+<PropertyGroup>
+  <PackAsTool>true</PackAsTool>
+  <PublishAot>true</PublishAot>
+  <ToolPackageRuntimeIdentifiers>linux-x64;linux-arm64;linux-musl-x64;linux-musl-arm64;osx-x64;osx-arm64;win-x64;win-arm64</ToolPackageRuntimeIdentifiers>
+</PropertyGroup>
+```
+
+```bash
+dotnet pack   # one host, one command, a package per RID
+```
+
+Things to know:
+
+- **Requires a .NET 11 SDK** with the extensibility point; on older SDKs the
+  hook is inert and the SDK's own host-capability rules apply.
+- Every requested RID is attempted, unfiltered — a RID this package can't
+  build fails its inner publish with a clear error rather than being silently
+  dropped from the set of produced packages.
+- Set `AotAnywhereMultiRidToolPackaging=false` to opt out and restore the
+  SDK's default host-capability selection.
+
 ## Compressing the output with UPX
 
 The published binary can optionally be compressed with
