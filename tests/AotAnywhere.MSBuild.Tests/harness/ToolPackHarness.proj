@@ -1,0 +1,20 @@
+<Project>
+
+  <!-- Tool-packaging harness. Imports the package's real entry-point targets
+       the way NuGet's build/ auto-import does, so tests exercise the outer
+       (RID-less) pack evaluation where _AotAnywhereSelectToolPackageRids
+       runs. Inputs are injected as MSBuild global properties by the test;
+       @(ToolPackageRuntimeIdentifiersToPack) is seeded from the
+       semicolon-delimited $(TestPredefinedToolPackRids) property because
+       items cannot be passed as global properties.
+
+       $(AotAnywhereSrcDir) is supplied by the test as an absolute path to the
+       repo's src/ directory. -->
+
+  <ItemGroup>
+    <ToolPackageRuntimeIdentifiersToPack Include="$(TestPredefinedToolPackRids)" />
+  </ItemGroup>
+
+  <Import Project="$(AotAnywhereSrcDir)StuDev.AotAnywhere.targets" />
+
+</Project>

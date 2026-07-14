@@ -11,4 +11,10 @@
        property. -->
   <Import Project="UpxCompress.targets" />
 
+  <!-- Multi-RID .NET tool packaging. Imported without the RID condition
+       because it must be active in the outer (RID-less) pack evaluation,
+       where the SDK asks which RID-specific tool packages this host can
+       build. -->
+  <Import Project="ToolPack.targets" />
+
 </Project>

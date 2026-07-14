@@ -1,0 +1,41 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- Multi-RID .NET tool packaging (dotnet/sdk#55250, .NET 11+).
+
+       When a tool project requests RID-specific packages (via
+       ToolPackageRuntimeIdentifiers or RuntimeIdentifiers), a single
+       `dotnet pack` orchestrates one inner pack per RID. For PublishAot tools
+       the base SDK clamps that to the RIDs the host's native toolchain can
+       build; ComputeToolPackageRuntimeIdentifiersToPack is its extensibility
+       point for packages that widen those capabilities. This package makes
+       every practical NativeAOT RID buildable from any supported host, so the
+       answer to "which requested RIDs can this host pack?" is: all of them.
+
+       On SDKs without the extensibility point the BeforeTargets reference is
+       ignored and this file is inert. Set
+       AotAnywhereMultiRidToolPackaging=false to fall back to the SDK's own
+       host-capability defaults. -->
+
+  <Target Name="_AotAnywhereSelectToolPackageRids"
+          BeforeTargets="ComputeToolPackageRuntimeIdentifiersToPack"
+          Condition="'$(RuntimeIdentifier)' == ''
+            and '$(CreateRidSpecificToolPackages)' == 'true'
+            and '$(AotAnywhereMultiRidToolPackaging)' != 'false'
+            and '@(ToolPackageRuntimeIdentifiersToPack)' == ''">
+
+    <PropertyGroup>
+      <!-- Same fallback the SDK's own default computation applies. -->
+      <_AotAnywhereToolPackageRids>$(ToolPackageRuntimeIdentifiers)</_AotAnywhereToolPackageRids>
+      <_AotAnywhereToolPackageRids Condition="'$(_AotAnywhereToolPackageRids)' == ''">$(RuntimeIdentifiers)</_AotAnywhereToolPackageRids>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <!-- Every requested RID, unfiltered: a RID neither this package nor the
+           SDK can build fails its inner publish with a clear error, which
+           beats silently dropping it from the set of produced packages. -->
+      <ToolPackageRuntimeIdentifiersToPack Include="$(_AotAnywhereToolPackageRids)" />
+    </ItemGroup>
+
+  </Target>
+
+</Project>
