@@ -18,8 +18,8 @@
   <!-- MSBuild provides these at run time (the task DLL is loaded into MSBuild);
        compile against them but never ship our own copy. -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.Build.Utilities.Core" Version="17.8.3" ExcludeAssets="runtime" />
-    <PackageReference Include="Microsoft.Build.Framework" Version="17.8.3" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core" Version="18.8.2" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Framework" Version="18.8.2" ExcludeAssets="runtime" />
   </ItemGroup>
 
 </Project>
