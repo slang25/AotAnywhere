@@ -59,7 +59,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v7
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
       - name: Run MSBuild logic tests
@@ -81,7 +81,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v7
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
       - name: Test package consumption from a clean NuGet cache
@@ -173,7 +173,7 @@ jobs:
       # SDK 10 because win-arm64 publishes as net10.0 to exercise the newest
       # Windows link.rsp shape; the other targets keep the net8.0 floor.
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
