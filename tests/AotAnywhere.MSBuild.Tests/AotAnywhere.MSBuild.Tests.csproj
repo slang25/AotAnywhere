@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="TUnit" Version="1.60.0" />
+    <PackageReference Include="TUnit" Version="1.61.0" />
     <PackageReference Include="Microsoft.Build.Locator" Version="1.11.2" />
     <!-- Compile against the MSBuild API but bind to the SDK's own copies at
          run time (MSBuildLocator loads them); referencing the runtime assets
