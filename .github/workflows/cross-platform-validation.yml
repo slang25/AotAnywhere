@@ -53,7 +53,7 @@ jobs:
   # that Swift-runtime links still get their overlay libs. Runs via `dotnet run`
   # (the test app is a Microsoft.Testing.Platform executable).
   msbuild-logic-tests:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-latest
     name: MSBuild logic unit tests
     steps:
       - name: Checkout repo
@@ -75,7 +75,7 @@ jobs:
   # the actionable error. One host is enough — the restore-graph behavior
   # under test is host-independent.
   package-consumption:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-latest
     name: Package consumption (clean NuGet cache)
     steps:
       - name: Checkout repo
@@ -92,7 +92,7 @@ jobs:
   # rcodesign emits a PEM pair, and Ubuntu's OpenSSL converts it to a PKCS#12
   # file with -legacy — the PFX encryption rcodesign can read back.
   test-cert:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-latest
     name: Generate test signing certificate
     steps:
       - name: Generate self-signed signing certificate
@@ -130,7 +130,7 @@ jobs:
   # targets and every target is still validated natively - only the set of
   # build *hosts* narrows.
   setup:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-latest
     name: Select host matrix
     outputs:
       build-matrix: ${{ steps.select.outputs.build-matrix }}
@@ -144,11 +144,11 @@ jobs:
         run: |
           if [ "$FULL_MATRIX" = "true" ]; then
             echo "Selected full host matrix (all five hosts)."
-            echo 'build-matrix={"include":[{"host":"windows-latest","host-name":"windows"},{"host":"ubuntu-latest","host-name":"linux"},{"host":"macos-15-intel","host-name":"macos-x64"},{"host":"macos-latest","host-name":"macos-arm64"},{"host":"ubuntu-24.04-arm","host-name":"linux-arm64"}]}' >> "$GITHUB_OUTPUT"
+            echo 'build-matrix={"include":[{"host":"depot-windows-latest","host-name":"windows"},{"host":"depot-ubuntu-latest","host-name":"linux"},{"host":"macos-15-intel","host-name":"macos-x64"},{"host":"depot-macos-latest","host-name":"macos-arm64"},{"host":"depot-ubuntu-24.04-arm","host-name":"linux-arm64"}]}' >> "$GITHUB_OUTPUT"
             echo 'host-sources=windows,linux,macos-x64,macos-arm64,linux-arm64' >> "$GITHUB_OUTPUT"
           else
             echo "Selected minimal host matrix (windows, linux, macos-arm64)."
-            echo 'build-matrix={"include":[{"host":"windows-latest","host-name":"windows"},{"host":"ubuntu-latest","host-name":"linux"},{"host":"macos-latest","host-name":"macos-arm64"}]}' >> "$GITHUB_OUTPUT"
+            echo 'build-matrix={"include":[{"host":"depot-windows-latest","host-name":"windows"},{"host":"depot-ubuntu-latest","host-name":"linux"},{"host":"depot-macos-latest","host-name":"macos-arm64"}]}' >> "$GITHUB_OUTPUT"
             echo 'host-sources=windows,linux,macos-arm64' >> "$GITHUB_OUTPUT"
           fi
 
@@ -296,11 +296,11 @@ jobs:
           # cover the shared library (lib-) loaded via ctypes and the
           # selftest binary (real ICU, zlib, OpenSSL) run natively on the
           # runner.
-          - runner: ubuntu-latest
+          - runner: depot-ubuntu-latest
             runner-name: ubuntu-x64
             test-targets: "linux-x64,linux-musl-x64,lib-linux-x64,linux-x64-selftest"
           # Test ARM64 binaries on Ubuntu ARM64 (now runnable on hosted ARM runners)
-          - runner: ubuntu-24.04-arm
+          - runner: depot-ubuntu-24.04-arm
             runner-name: ubuntu-arm64
             test-targets: "linux-arm64,linux-musl-arm64"
           # Test ARMv7 binaries under QEMU on Ubuntu x64: there is no hosted
@@ -308,7 +308,7 @@ jobs:
           # 32-bit AArch32 execution, so emulation is the only option. The
           # binaries run inside linux/arm/v7 containers - Debian for the
           # glibc target (it needs an armhf userland), Alpine for musl.
-          - runner: ubuntu-latest
+          - runner: depot-ubuntu-latest
             runner-name: ubuntu-armv7-qemu
             test-targets: "linux-arm,linux-musl-arm"
             qemu: true
@@ -317,14 +317,14 @@ jobs:
             runner-name: macos-x64
             test-targets: "osx-x64"
           # Test macOS binaries on macOS ARM64
-          - runner: macos-latest
+          - runner: depot-macos-latest
             runner-name: macos-arm64
             test-targets: "osx-arm64"
           # Test Windows x64 binaries on Windows x64. The windows-host builds
           # are MSVC-linked (package inert there); the others are zig-linked
           # by the shim's link personality, so this is where the MinGW-glued
           # binaries prove they actually run.
-          - runner: windows-latest
+          - runner: depot-windows-latest
             runner-name: windows-x64
             test-targets: "win-x64"
           # Test Windows ARM64 binaries on the hosted arm64 Windows runner.
@@ -579,7 +579,7 @@ jobs:
   report:
     needs: [build, validate, setup]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-latest
     name: Platform Support Report
 
     steps:

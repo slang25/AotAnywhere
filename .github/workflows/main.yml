@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   zig_version_sync:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-latest
     name: ZigVersion drift guard
     steps:
       - name: Checkout repo
@@ -35,7 +35,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - vm: windows-latest
+          - vm: depot-windows-latest
     runs-on: ${{ matrix.vm }}
     name: Build and test ${{ matrix.vm }}
     steps:
@@ -90,7 +90,7 @@ jobs:
 
   validate:
     needs: build_and_test
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-latest
     name: Try launching
     steps:
       - name: Download all artifacts

@@ -26,7 +26,7 @@ jobs:
     # The package is host-independent now (one portable netstandard2.0 task DLL,
     # no per-host prebuilt binaries), so any runner can pack it; windows-latest
     # is retained only for continuity.
-    runs-on: windows-latest
+    runs-on: depot-windows-latest
     # Trusted publishing: NuGet/login mints a short-lived key from the OIDC
     # token instead of a long-lived nuget.org API key. contents: write is for
     # attaching the .nupkg to the GitHub release.

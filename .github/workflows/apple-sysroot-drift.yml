@@ -23,7 +23,7 @@ jobs:
   # Regenerate the stubs from the newest packs and open a PR on drift. Must run
   # on macOS: the generator drives xcrun/nm and the local SDK's .tbd files.
   drift:
-    runs-on: macos-latest
+    runs-on: depot-macos-latest
     name: Regenerate stubs and check for drift
     steps:
       - name: Checkout repo
@@ -96,7 +96,7 @@ jobs:
   # that links against the bundled src/apple-sysroot stubs - the real user
   # scenario, and the only configuration where a stub gap turns the run red.
   canary:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-latest
     name: Canary publish (osx-arm64, newest preview SDK)
     steps:
       - name: Checkout repo
